@@ -1,7 +1,7 @@
 "use client";
 
-import { ArrowUpRight, Wallet } from "lucide-react";
-import { encodeFunctionData, formatUnits } from "viem";
+import { ArrowUpRight, RefreshCw, Wallet } from "lucide-react";
+import { encodeFunctionData, formatUnits, keccak256, toBytes } from "viem";
 import { useEffect, useMemo, useState } from "react";
 
 declare global {
@@ -17,6 +17,8 @@ const TEMPO_RPC = "https://rpc.tempo.xyz";
 const EXPLORER = "https://explore.tempo.xyz";
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS ?? "";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
+const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
+const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
 
 const tokens: Record<string, { symbol: string; address: string; decimals: number }> = {
   "0x20c000000000000000000000b9537d11c60e8b50": { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
@@ -69,6 +71,18 @@ async function rpc(method: string, params: unknown[]) {
   return body.result ?? "";
 }
 
+async function getDropLogs(dropId: string) {
+  const paddedId = BigInt(dropId).toString(16).padStart(64, "0");
+  const response = await fetch(TEMPO_RPC, {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{ address: SATODROPS_CONTRACT, fromBlock: "0x0", toBlock: "latest", topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId] }] }),
+  });
+  if (!response.ok) throw new Error("Tempo RPC request failed.");
+  const body = await response.json() as { result?: Array<{ topics?: string[]; data?: string; transactionHash?: string }>; error?: { message?: string } };
+  if (body.error) throw new Error(body.error.message ?? "Tempo RPC error.");
+  return body.result ?? [];
+}
+
 async function waitForReceipt(hash: string) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const raw = await rpc("eth_getTransactionReceipt", [hash]);
@@ -114,8 +128,27 @@ export default function ClaimPage() {
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState("");
   const [successHash, setSuccessHash] = useState("");
+  const [claimHistory, setClaimHistory] = useState<Array<{ claimant: string; reward: bigint; claimFee: bigint; txHash: string }>>([]);
+  const [dropTxHash, setDropTxHash] = useState("");
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const token = useMemo(() => drop ? tokens[drop.token.toLowerCase()] : undefined, [drop]);
+
+  async function loadHistory(historyDropId: string) {
+    setHistoryLoading(true);
+    try {
+      const logs = await getDropLogs(historyDropId);
+      const createdLog = logs.find((log) => log.topics?.[0] === DROP_CREATED_TOPIC);
+      if (createdLog?.transactionHash) setDropTxHash(createdLog.transactionHash);
+      const claims = logs.filter((log) => log.topics?.[0] === DROP_CLAIMED_TOPIC && (log.topics?.length ?? 0) >= 3).map((log) => {
+        const data = (log.data ?? "").replace(/^0x/, "");
+        return { claimant: "0x" + (log.topics?.[2] ?? "").slice(-40), reward: BigInt("0x" + data.slice(0, 64)), claimFee: BigInt("0x" + data.slice(64, 128)), txHash: log.transactionHash ?? "" };
+      }).filter((claim) => claim.txHash);
+      setClaimHistory(claims);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not load claim history.");
+    } finally { setHistoryLoading(false); }
+  }
 
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id") ?? "";
@@ -132,6 +165,7 @@ export default function ClaimPage() {
           data: encodeFunctionData({ abi, functionName: "drops", args: [BigInt(id)] }),
         }, "latest"]);
         setDrop(decodeDropResult(data));
+        await loadHistory(id);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load this drop.");
       } finally {
@@ -189,6 +223,7 @@ export default function ClaimPage() {
       const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: account, to: SATODROPS_CONTRACT, data, feeToken: PATH_USD_FEE_TOKEN }] }) as string;
       await waitForReceipt(hash);
       setSuccessHash(hash);
+      await loadHistory(dropId);
       setAlreadyClaimed(true);
       setDrop((current) => current ? { ...current, claimed: current.claimed + 1n } : current);
     } catch (e) {
@@ -201,6 +236,9 @@ export default function ClaimPage() {
   const expired = !!drop && drop.expiresAt !== 0n && BigInt(Math.floor(Date.now() / 1000)) >= drop.expiresAt;
   const unavailable = !!drop && (drop.closed || expired || drop.claimed >= drop.maxClaims);
   const explorerLink = successHash ? `${EXPLORER}/tx/${successHash}` : "";
+  const dropExplorerLink = dropTxHash ? `${EXPLORER}/tx/${dropTxHash}` : "";
+  const claimsRemaining = drop ? drop.maxClaims - drop.claimed : 0n;
+  const allClaimed = !!drop && drop.claimed >= drop.maxClaims;
 
   return (
     <main className="claim-page">
@@ -219,6 +257,9 @@ export default function ClaimPage() {
               <div className="claim-amount">{formatUnits(drop.amountPerClaim, token?.decimals ?? 6)} <span>{token?.symbol ?? ""}</span></div>
               <p className="claim-message">{drop.message || "A SatoDrops reward is waiting for you."}</p>
               <div className="claim-meta"><span>{drop.claimed.toString()} / {drop.maxClaims.toString()} claimed</span><span>Creator {shortAddress(drop.creator)}</span></div>
+              <div className="drop-progress"><div style={{ width: `${Math.min(100, Number(drop.claimed * 100n / drop.maxClaims))}%` }}/></div>
+              <div className={allClaimed ? "drop-status complete" : "drop-status"}>{allClaimed ? "All claims completed" : `${claimsRemaining.toString()} claim${claimsRemaining === 1n ? "" : "s"} remaining`}</div>
+              {dropTxHash && <a className="drop-tx-link" href={dropExplorerLink} target="_blank" rel="noreferrer">View drop creation transaction on Tempo Explorer <ArrowUpRight size={13}/></a>}
               {expired && <div className="wallet-error">This drop has expired.</div>}
               {drop.closed && <div className="wallet-error">This drop has been closed.</div>}
               {drop.claimed >= drop.maxClaims && <div className="wallet-error">This drop is sold out.</div>}
@@ -230,6 +271,10 @@ export default function ClaimPage() {
               </button>
               {account && <div className="claim-wallet">Connected {shortAddress(account)}</div>}
               {error && drop && <div className="wallet-error">{error}</div>}
+              <section className="claim-history">
+                <div className="history-heading"><div><div className="summary-label">TRANSACTION HISTORY</div><h2>Claims</h2></div><button className="history-refresh" onClick={() => loadHistory(dropId)} disabled={historyLoading}><RefreshCw size={14}/>{historyLoading ? "Refreshing" : "Refresh"}</button></div>
+                {claimHistory.length === 0 ? <div className="history-empty">{historyLoading ? "Loading claims…" : "No claims yet."}</div> : <div className="history-list">{claimHistory.map((claim, index) => <div className="history-row" key={claim.txHash}><div><span className="history-index">#{index + 1}</span><b>{shortAddress(claim.claimant)}</b></div><div className="history-reward">{formatUnits(claim.reward, token?.decimals ?? 6)} {token?.symbol ?? ""}</div><a href={`${EXPLORER}/tx/${claim.txHash}`} target="_blank" rel="noreferrer" aria-label="View claim transaction"><ArrowUpRight size={15}/></a></div>)}</div>}
+              </section>
               <div className="summary-note">Claimants receive the full reward amount. The 0.5% claim fee is paid from the drop's reserved fee balance.</div>
             </>
           )}
