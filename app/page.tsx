@@ -50,7 +50,11 @@ export default function Home() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [walletError, setWalletError] = useState("");
 
-  const total = (Number(amount || 0) * Number(claims || 0)).toFixed(2);
+  const rewardTotal = Number(amount || 0) * Number(claims || 0);
+  const creationFee = rewardTotal * 0.01;
+  const claimFees = rewardTotal * 0.005;
+  const total = rewardTotal.toFixed(2);
+  const totalFunding = (rewardTotal + creationFee + claimFees).toFixed(2);
   const selectedToken = useMemo(() => tokens.find((t) => t.symbol === token) ?? tokens[0], [token]);
 
   async function connectWallet() {
@@ -160,8 +164,11 @@ export default function Home() {
             <div className="summary-total">{total} <span>{token}</span></div>
             <div className="summary-line"><span>Per claim</span><b>{amount || "0"} {token}</b></div>
             <div className="summary-line"><span>Claims</span><b>{claims || "0"}</b></div>
+            <div className="summary-line"><span>Creation fee · 1%</span><b>{creationFee.toFixed(2)} {token}</b></div>
+            <div className="summary-line"><span>Claim fees reserved · 0.5%</span><b>{claimFees.toFixed(2)} {token}</b></div>
+            <div className="summary-line total-funding"><span>Total to fund</span><b>{totalFunding} {token}</b></div>
             <div className="summary-line"><span>Network</span><b><span className="network-dot"/> Tempo</b></div>
-            <div className="summary-note">You fund the full drop once. Unclaimed funds remain locked until the drop expires or is closed.</div>
+            <div className="summary-note">You fund the rewards plus the 1% creation fee and 0.5% claim fees upfront. Claimants receive the full reward amount.</div>
           </aside>
         </div>
       </section>
