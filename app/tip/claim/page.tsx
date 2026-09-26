@@ -9,6 +9,7 @@ declare global {
     ethereum?: {
       request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
     };
+    onTelegramAuth?: (data: Record<string, string>) => void;
   }
 }
 
