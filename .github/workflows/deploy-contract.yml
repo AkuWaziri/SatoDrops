@@ -27,16 +27,16 @@ jobs:
 
       - name: Build contracts
         run: |
-          export PATH="$HOME/.foundry/bin:$PATH"
+          export PATH="$HOME/.config/.foundry/bin:$PATH"
           forge build
 
       - name: Deploy to Tempo mainnet
         env:
           PRIVATE_KEY: ${{ secrets.TEMPO_DEPLOYER_PRIVATE_KEY }}
           FEE_RECIPIENT: ${{ secrets.SATODROPS_FEE_RECIPIENT }}
-          FEE_TOKEN: "0x20c0000000000000000000000000000000000000"
+          FEE_TOKEN: "0x20c000000000000000000000b9537d11c60e8b50"
         run: |
-          export PATH="$HOME/.foundry/bin:$PATH"
+          export PATH="$HOME/.config/.foundry/bin:$PATH"
 
           test -n "$PRIVATE_KEY"
           test -n "$FEE_RECIPIENT"
@@ -44,9 +44,9 @@ jobs:
           DEPLOYER="$(cast wallet address --private-key "$PRIVATE_KEY")"
           echo "Deployer: $DEPLOYER"
 
-          echo "Checking pathUSD balance for gas..."
+          echo "Checking USDC balance for gas..."
           BALANCE="$(cast call "$FEE_TOKEN"             "balanceOf(address)(uint256)" "$DEPLOYER"             --rpc-url https://rpc.tempo.xyz)"
-          echo "pathUSD balance (base units): $BALANCE"
+          echo "USDC balance (base units): $BALANCE"
 
           test "$BALANCE" != "0"
 
