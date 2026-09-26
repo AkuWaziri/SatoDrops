@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowUpRight, Check, Wallet } from "lucide-react";
 import { encodeFunctionData, encodePacked, keccak256 } from "viem";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -83,6 +83,7 @@ export default function TipClaimPage() {
   const [working,setWorking]=useState(false);
   const [error,setError]=useState("");
   const [tx,setTx]=useState("");
+  const telegramRef = useRef<HTMLDivElement>(null);
 
   useEffect(()=>{
     const params=new URLSearchParams(window.location.search);
@@ -125,8 +126,39 @@ export default function TipClaimPage() {
     window.location.assign("/api/auth/x/start?return=claim&id="+encodeURIComponent(id));
   }
 
+  useEffect(() => {
+    if (!tip || tip.identityType !== 2 || !telegramRef.current) return;
+    const botUsername = process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME;
+    if (!botUsername) return;
+    window.onTelegramAuth = async (data: Record<string, string>) => {
+      setError("");
+      try {
+        const response = await fetch("/api/auth/telegram/verify", {
+          method: "POST", headers: {"content-type":"application/json"}, body: JSON.stringify(data)
+        });
+        const result = await response.json() as {ok?:boolean;identity?:string;error?:string};
+        if (!response.ok || !result.ok) throw new Error(result.error ?? "Telegram verification failed.");
+        setVerified(true);
+        setVerifiedIdentity("Telegram @" + (result.identity ?? data.username));
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Telegram verification failed.");
+      }
+    };
+    const script=document.createElement("script");
+    script.src="https://telegram.org/js/telegram-widget.js?22";
+    script.async=true;
+    script.setAttribute("data-telegram-login",botUsername);
+    script.setAttribute("data-size","large");
+    script.setAttribute("data-userpic","false");
+    script.setAttribute("data-request-access","write");
+    script.setAttribute("data-onauth","onTelegramAuth(user)");
+    telegramRef.current.innerHTML="";
+    telegramRef.current.appendChild(script);
+    return () => { if (telegramRef.current) telegramRef.current.innerHTML=""; };
+  },[tip]);
+
   function verifyTelegram() {
-    setError("Telegram verification widget is not configured yet.");
+    if (!process.env.NEXT_PUBLIC_TELEGRAM_BOT_USERNAME) setError("Telegram authentication is not configured.");
   }
 
   async function claim() {
@@ -181,7 +213,7 @@ export default function TipClaimPage() {
           <span>{verified?"Identity verified":"Verify recipient identity"}</span>
           {tip.identityType===1
             ? <button className="create-btn" onClick={verifyX} disabled={working}>{verified?"X verified":"Verify with X"}</button>
-            : <button className="create-btn" onClick={verifyTelegram} disabled={working}>{verified?"Telegram verified":"Verify with Telegram"}</button>}
+            : <div ref={telegramRef}>{!verified && <button className="create-btn" onClick={verifyTelegram} disabled={working}>Verify with Telegram</button>}</div>}
         </div>}
         {verifiedIdentity&&<div className="success-box"><Check size={15}/>{verifiedIdentity}</div>}
         <button className="create-btn" onClick={()=>void connect()} disabled={working}><Wallet size={16}/>{account?"Wallet connected":"Connect wallet"}<ArrowUpRight size={15}/></button>
