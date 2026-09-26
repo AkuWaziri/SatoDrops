@@ -319,6 +319,7 @@ export default function Home() {
         </div>
       </section>
 
+
       <section className="existing-drops">
         <div className="section-heading"><div><div className="eyebrow">ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">LIVE FROM TEMPO</span></div>
         {recentDropsLoading ? <div className="existing-empty">Loading existing drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops found yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div></a>; })}</div>}
@@ -353,6 +354,7 @@ export default function Home() {
           </aside>
         </div>
       </section>
+
 
       <section id="how" className="how"><div className="eyebrow">THE LOOP</div><h2>Create. Fund. Share. Claim.</h2><div className="steps">{[["01","Create","Choose a stablecoin, amount and purpose."],["02","Fund","Approve the total reward on Tempo."],["03","Share","Send the claim link anywhere."],["04","Claim","A recipient connects and gets paid."]].map(([n,t,d])=><div className="step" key={n}><span>{n}</span><h3>{t}</h3><p>{d}</p></div>)}</div></section>
 
