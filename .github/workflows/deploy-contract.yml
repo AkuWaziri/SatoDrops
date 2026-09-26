@@ -13,26 +13,43 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-        with:
-          version: stable
+      - name: Install Tempo Foundry
+        run: |
+          curl -L https://foundry.paradigm.xyz | bash
+          export PATH="$HOME/.foundry/bin:$PATH"
+          foundryup -n tempo
 
       - name: Install forge-std
-        run: forge install foundry-rs/forge-std --no-commit
+        run: |
+          export PATH="$HOME/.foundry/bin:$PATH"
+          forge install foundry-rs/forge-std --no-commit
 
       - name: Build contracts
-        run: forge build
+        run: |
+          export PATH="$HOME/.foundry/bin:$PATH"
+          forge build
 
       - name: Deploy to Tempo mainnet
         env:
           PRIVATE_KEY: ${{ secrets.TEMPO_DEPLOYER_PRIVATE_KEY }}
           FEE_RECIPIENT: ${{ secrets.SATODROPS_FEE_RECIPIENT }}
+          FEE_TOKEN: "0x20c0000000000000000000000000000000000000"
         run: |
+          export PATH="$HOME/.foundry/bin:$PATH"
+
           test -n "$PRIVATE_KEY"
           test -n "$FEE_RECIPIENT"
 
-          OUTPUT="$(forge create contracts/SatoDrops.sol:SatoDrops             --rpc-url https://rpc.tempo.xyz             --private-key "$PRIVATE_KEY"             --broadcast             --constructor-args "$FEE_RECIPIENT")"
+          DEPLOYER="$(cast wallet address --private-key "$PRIVATE_KEY")"
+          echo "Deployer: $DEPLOYER"
+
+          echo "Checking pathUSD balance for gas..."
+          BALANCE="$(cast call "$FEE_TOKEN"             "balanceOf(address)(uint256)" "$DEPLOYER"             --rpc-url https://rpc.tempo.xyz)"
+          echo "pathUSD balance (base units): $BALANCE"
+
+          test "$BALANCE" != "0"
+
+          OUTPUT="$(forge create contracts/SatoDrops.sol:SatoDrops             --rpc-url https://rpc.tempo.xyz             --private-key "$PRIVATE_KEY"             --broadcast             --tempo.fee-token "$FEE_TOKEN"             --constructor-args "$FEE_RECIPIENT")"
 
           echo "$OUTPUT"
 
