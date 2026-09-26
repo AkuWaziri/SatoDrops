@@ -75,7 +75,9 @@ export default function TipPage(){
     try{
       setCreating(true);
       const normalized=identityType==="wallet"?identity.trim().toLowerCase():identity.trim().replace(/^@/,"").toLowerCase();
-      const identityHash=identityType==="wallet"\n        ? keccak256(encodePacked(["address"], [identity as `0x${string}`]))\n        : keccak256(toBytes(normalized)); const amountRaw=parseUnits(amount,selected.decimals);
+      const identityHash=identityType==="wallet"
+        ? keccak256(encodePacked(["address"], [identity as `0x${string}`]))
+        : keccak256(toBytes(normalized)); const amountRaw=parseUnits(amount,selected.decimals);
       const funding=amountRaw+amountRaw/100n+amountRaw/200n;
       const approve=encodeFunctionData({abi:erc20Abi,functionName:"approve",args:[SATOTIPS_CONTRACT as `0x${string}`,funding]});
       const ah=await window.ethereum.request({method:"eth_sendTransaction",params:[{from:account,to:selected.address,data:approve,feeToken:PATH_USD_FEE_TOKEN}]}) as string;
