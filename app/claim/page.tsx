@@ -67,21 +67,21 @@ async function rpc(method: string, params: unknown[]) {
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
   });
   if (!response.ok) throw new Error("Tempo RPC request failed.");
-  const body = await response.json() as { result?: string; error?: { message?: string } };
+  const body = await response.json() as { result?: unknown; error?: { message?: string } };
   if (body.error) throw new Error(body.error.message ?? "Tempo RPC error.");
-  return body.result ?? "";
+  return body.result;
 }
 
 async function getDropLogs(dropId: string) {
   const paddedId = BigInt(dropId).toString(16).padStart(64, "0");
   const deploymentRaw = await rpc("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
   if (!deploymentRaw) throw new Error("Could not locate the SatoDrops deployment transaction.");
-  const deploymentReceipt = JSON.parse(deploymentRaw) as { blockNumber?: string };
+  const deploymentReceipt = deploymentRaw as { blockNumber?: string };
   if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
 
-  const fromBlock = BigInt(deploymentReceipt.blockNumber);
+  const fromBlock = BigInt(deploymentReceipt.blockNumber as string);
   const latestRaw = await rpc("eth_blockNumber", []);
-  const latestBlock = BigInt(latestRaw);
+  const latestBlock = BigInt(latestRaw as string);
   const maxRange = 100000n;
   const logs: Array<{ topics?: string[]; data?: string; transactionHash?: string }> = [];
 
@@ -108,7 +108,7 @@ async function waitForReceipt(hash: string) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
     const raw = await rpc("eth_getTransactionReceipt", [hash]);
     if (raw) {
-      const receipt = JSON.parse(JSON.stringify(raw)) as { status?: string };
+      const receipt = raw as { status?: string };
       if (receipt.status === "0x0") throw new Error("Claim transaction reverted on Tempo.");
       return receipt;
     }
@@ -149,7 +149,7 @@ export default function ClaimPage() {
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState("");
   const [successHash, setSuccessHash] = useState("");
-  const [claimHistory, setClaimHistory] = useState<Array<{ claimant: string; reward: bigint; claimFee: bigint; txHash: string }>>([]);
+  const [claimHistory, setClaimHistory] = useState<Array<{ claimant: string; txHash: string }>>([]);
   const [dropTxHash, setDropTxHash] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
 
@@ -163,7 +163,7 @@ export default function ClaimPage() {
       if (createdLog?.transactionHash) setDropTxHash(createdLog.transactionHash);
       const claims = logs.filter((log) => log.topics?.[0] === DROP_CLAIMED_TOPIC && (log.topics?.length ?? 0) >= 3).map((log) => {
         const data = (log.data ?? "").replace(/^0x/, "");
-        return { claimant: "0x" + (log.topics?.[2] ?? "").slice(-40), reward: BigInt("0x" + data.slice(0, 64)), claimFee: BigInt("0x" + data.slice(64, 128)), txHash: log.transactionHash ?? "" };
+        return { claimant: "0x" + (log.topics?.[2] ?? "").slice(-40), txHash: log.transactionHash ?? "" };
       }).filter((claim) => claim.txHash);
       setClaimHistory(claims);
     } catch (e) {
@@ -294,8 +294,8 @@ export default function ClaimPage() {
               {account && <div className="claim-wallet">Connected {shortAddress(account)}</div>}
               {error && drop && <div className="wallet-error">{error}</div>}
               <section className="claim-history">
-                <div className="history-heading"><div><div className="summary-label">TRANSACTION HISTORY</div><h2>Claims</h2></div><button className="history-refresh" onClick={() => loadHistory(dropId)} disabled={historyLoading}><RefreshCw size={14}/>{historyLoading ? "Refreshing" : "Refresh"}</button></div>
-                {claimHistory.length === 0 ? <div className="history-empty">{historyLoading ? "Loading claims…" : "No claims yet."}</div> : <div className="history-list">{claimHistory.map((claim, index) => <div className="history-row" key={claim.txHash}><div><span className="history-index">#{index + 1}</span><b>{shortAddress(claim.claimant)}</b></div><div className="history-reward">{formatUnits(claim.reward, token?.decimals ?? 6)} {token?.symbol ?? ""}</div><a href={`${EXPLORER}/tx/${claim.txHash}`} target="_blank" rel="noreferrer" aria-label="View claim transaction"><ArrowUpRight size={15}/></a></div>)}</div>}
+                <div className="history-heading"><div><div className="summary-label">CLAIM ACTIVITY</div><h2>{claimHistory.length} claim{claimHistory.length === 1 ? "" : "s"}</h2></div><button className="history-refresh" onClick={() => loadHistory(dropId)} disabled={historyLoading}><RefreshCw size={14}/>{historyLoading ? "Refreshing" : "Refresh"}</button></div>
+                {claimHistory.length === 0 ? <div className="history-empty">{historyLoading ? "Loading claims…" : "No claims yet."}</div> : <div className="history-list">{claimHistory.map((claim, index) => <div className="history-row" key={claim.txHash}><div><span className="history-index">#{index + 1}</span><b>{shortAddress(claim.claimant)}</b></div><a href={`${EXPLORER}/tx/${claim.txHash}`} target="_blank" rel="noreferrer">View on Tempo Explorer <ArrowUpRight size={15}/></a></div>)}</div>}
               </section>
               <div className="summary-note">Claimants receive the full reward amount. The 0.5% claim fee is paid from the drop's reserved fee balance.</div>
             </>
