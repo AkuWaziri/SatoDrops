@@ -1,0 +1,34 @@
+name: Deploy SatoDrops Contract
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
+
+      - name: Build contracts
+        run: forge build
+
+      - name: Deploy to Tempo mainnet
+        env:
+          PRIVATE_KEY: ${{ secrets.TEMPO_DEPLOYER_PRIVATE_KEY }}
+          FEE_RECIPIENT: ${{ secrets.SATODROPS_FEE_RECIPIENT }}
+        run: |
+          test -n "$PRIVATE_KEY"
+          test -n "$FEE_RECIPIENT"
+          forge create contracts/SatoDrops.sol:SatoDrops             --rpc-url https://rpc.tempo.xyz             --private-key "$PRIVATE_KEY"             --constructor-args "$FEE_RECIPIENT"             --broadcast
+
+      - name: Deployment reminder
+        run: echo "Copy the deployed contract address into NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS."
