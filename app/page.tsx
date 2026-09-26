@@ -65,7 +65,7 @@ const DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57d
 async function readTempoRpc(method: string, params: unknown[]) {
   const response = await fetch("https://rpc.tempo.xyz", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
   if (!response.ok) throw new Error("Tempo RPC request failed.");
-  const body = await response.json() as { result?: string; error?: { message?: string } };
+  const body = await response.json() as { result?: unknown; error?: { message?: string } };
   if (body.error) throw new Error(body.error.message ?? "Tempo RPC error.");
   return body.result ?? "";
 }
@@ -257,7 +257,7 @@ export default function Home() {
       try {
         if (!SATODROPS_CONTRACT) return;
         const deploymentRaw = await readTempoRpc("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
-        const deploymentReceipt = JSON.parse(deploymentRaw) as { blockNumber?: string };
+        const deploymentReceipt = deploymentRaw as { blockNumber?: string };
         if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
         const latestRaw = await readTempoRpc("eth_blockNumber", []);
         const deploymentBlock = BigInt(deploymentReceipt.blockNumber);
@@ -266,10 +266,10 @@ export default function Home() {
         const fromBlock = latestBlock > maxRange ? latestBlock - maxRange + 1n : deploymentBlock;
         const effectiveFrom = fromBlock > deploymentBlock ? fromBlock : deploymentBlock;
         const raw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CREATED_TOPIC] }]);
-        const logs = JSON.parse(raw) as Array<{ topics?: string[]; transactionHash?: string }>;
+        const logs = raw as Array<{ topics?: string[]; transactionHash?: string }>;
         const ids = logs.map((log) => log.topics?.[1] ? BigInt(log.topics[1]).toString() : "").filter(Boolean).slice(-10).reverse();
         const claimRaw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CLAIMED_TOPIC] }]);
-        const claimLogs = JSON.parse(claimRaw) as Array<{ topics?: string[]; transactionHash?: string }>;
+        const claimLogs = claimRaw as Array<{ topics?: string[]; transactionHash?: string }>;
         const loaded = [];
         for (const id of ids) {
           const creationLog = logs.find((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id);
