@@ -16,6 +16,7 @@ const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_RPC = "https://rpc.tempo.xyz";
 const EXPLORER = "https://explore.tempo.xyz";
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS ?? "";
+const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 
 const tokens: Record<string, { symbol: string; address: string; decimals: number }> = {
   "0x20c000000000000000000000b9537d11c60e8b50": { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
@@ -185,7 +186,7 @@ export default function ClaimPage() {
     try {
       setClaiming(true);
       const data = encodeFunctionData({ abi, functionName: "claim", args: [BigInt(dropId)] });
-      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: account, to: SATODROPS_CONTRACT, data }] }) as string;
+      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: account, to: SATODROPS_CONTRACT, data, feeToken: PATH_USD_FEE_TOKEN }] }) as string;
       await waitForReceipt(hash);
       setSuccessHash(hash);
       setAlreadyClaimed(true);
