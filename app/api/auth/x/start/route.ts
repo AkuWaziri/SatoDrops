@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { randomBytes } from "crypto";
+import { createHash, randomBytes } from "crypto";
 
 export async function GET() {
   const clientId = process.env.X_CLIENT_ID;
@@ -8,7 +8,7 @@ export async function GET() {
 
   const state = randomBytes(24).toString("base64url");
   const verifier = randomBytes(48).toString("base64url");
-  const challenge = require("crypto").createHash("sha256").update(verifier).digest("base64url");
+  const challenge = createHash("sha256").update(verifier).digest("base64url");
 
   const response = NextResponse.redirect(
     "https://twitter.com/i/oauth2/authorize?" +
