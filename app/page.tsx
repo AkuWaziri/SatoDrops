@@ -59,6 +59,7 @@ const satodropsAbi = [
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
 const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
+const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
 const DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
 
 async function readTempoRpc(method: string, params: unknown[]) {
@@ -104,7 +105,7 @@ export default function Home() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [walletError, setWalletError] = useState("");
   const [creating, setCreating] = useState(false);
-  const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint }>>([]);
+  const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[] }>>([]);
   const [recentDropsLoading, setRecentDropsLoading] = useState(true);
 
   const rewardTotal = Number(amount || 0) * Number(claims || 0);
@@ -265,16 +266,20 @@ export default function Home() {
         const fromBlock = latestBlock > maxRange ? latestBlock - maxRange + 1n : deploymentBlock;
         const effectiveFrom = fromBlock > deploymentBlock ? fromBlock : deploymentBlock;
         const raw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CREATED_TOPIC] }]);
-        const logs = JSON.parse(raw) as Array<{ topics?: string[] }>;
+        const logs = JSON.parse(raw) as Array<{ topics?: string[]; transactionHash?: string }>;
         const ids = logs.map((log) => log.topics?.[1] ? BigInt(log.topics[1]).toString() : "").filter(Boolean).slice(-10).reverse();
+        const claimRaw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CLAIMED_TOPIC] }]);
+        const claimLogs = JSON.parse(claimRaw) as Array<{ topics?: string[]; transactionHash?: string }>;
         const loaded = [];
         for (const id of ids) {
+          const creationLog = logs.find((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id);
+          const claimTxs = claimLogs.filter((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id && log.transactionHash).map((log) => log.transactionHash as string);
           const data = await readTempoRpc("eth_call", [{ to: SATODROPS_CONTRACT, data: encodeFunctionData({ abi: [{ type:"function", name:"drops", stateMutability:"view", inputs:[{name:"dropId",type:"uint256"}], outputs:[{name:"creator",type:"address"},{name:"token",type:"address"},{name:"amountPerClaim",type:"uint128"},{name:"maxClaims",type:"uint64"},{name:"claimed",type:"uint64"},{name:"expiresAt",type:"uint64"},{name:"closed",type:"bool"},{name:"message",type:"string"}] }] as const, functionName:"drops", args:[BigInt(id)] }) }, "latest"]);
           const hex = data.replace(/^0x/, "");
           const word = (i:number) => hex.slice(i*64,(i+1)*64);
           const tokenAddress = "0x" + word(1).slice(24);
           const tokenInfo = tokens.find((t) => t.address.toLowerCase() === tokenAddress.toLowerCase());
-          if (tokenInfo) loaded.push({ id, creator:"0x"+word(0).slice(24), token:tokenInfo, amountPerClaim:BigInt("0x"+word(2)), maxClaims:BigInt("0x"+word(3)), claimed:BigInt("0x"+word(4)) });
+          if (tokenInfo) loaded.push({ id, creator:"0x"+word(0).slice(24), token:tokenInfo, amountPerClaim:BigInt("0x"+word(2)), maxClaims:BigInt("0x"+word(3)), claimed:BigInt("0x"+word(4)), creationTx:creationLog?.transactionHash ?? "", claimTxs });
         }
         setRecentDrops(loaded);
       } catch (error) { console.error("Could not load existing drops", error); }
@@ -363,7 +368,7 @@ export default function Home() {
 
       <section className="existing-drops">
         <div className="section-heading"><div><div className="eyebrow">ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">LIVE FROM TEMPO</span></div>
-        {recentDropsLoading ? <div className="existing-empty">Loading existing drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops found yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div></a>; })}</div>}
+        {recentDropsLoading ? <div className="existing-empty">Loading existing drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops found yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
       </section>
 
 
