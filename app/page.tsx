@@ -311,7 +311,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
     <main>
       <nav className="nav">
         <div className="brand"><span className="brand-mark">S</span><span>SatoDrops</span></div>
-        <div className="nav-links"><a href="#how">How it works</a><a href="#create">Create a drop</a><button className="wallet-btn" onClick={connectWallet}><Wallet size={16}/> {account ? shortAddress(account) : "Connect wallet"}</button></div>
+        <div className="nav-links"><a href="#how">How it works</a><a href="#create">Create a drop</a><a href="#tips">SatoTips</a><button className="wallet-btn" onClick={connectWallet}><Wallet size={16}/> {account ? shortAddress(account) : "Connect wallet"}</button></div>
       </nav>
 
       {walletError && <div className="wallet-error">{walletError}</div>}
@@ -374,6 +374,14 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
       <section className="existing-drops">
         <div className="section-heading"><div><div className="eyebrow">YOUR ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">PRIVATE TO CONNECTED WALLET</span></div>
         {!account ? <div className="existing-empty">Connect your wallet to view your drops.</div> : recentDropsLoading ? <div className="existing-empty">Loading your drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops created by this wallet yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
+      </section>
+
+
+      <section id="tips" className="how">
+        <div className="eyebrow">SATOTIPS</div>
+        <h2>A separate way to send a private tip.</h2>
+        <p className="hero-text">Send a stablecoin tip to a verified X or Telegram identity, or directly to a wallet. The recipient connects their wallet and claims it on Tempo.</p>
+        <div className="hero-actions"><a className="primary" href="/tip">Open SatoTips <ArrowUpRight size={17}/></a><a className="secondary" href="/tip">Create a tip</a></div>
       </section>
 
 
