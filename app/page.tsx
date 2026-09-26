@@ -59,6 +59,7 @@ const satodropsAbi = [
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
 const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
+const DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
 
 async function readTempoRpc(method: string, params: unknown[]) {
   const response = await fetch("https://rpc.tempo.xyz", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
@@ -254,7 +255,16 @@ export default function Home() {
     const loadRecentDrops = async () => {
       try {
         if (!SATODROPS_CONTRACT) return;
-        const raw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x0", toBlock: "latest", topics: [DROP_CREATED_TOPIC] }]);
+        const deploymentRaw = await readTempoRpc("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
+        const deploymentReceipt = JSON.parse(deploymentRaw) as { blockNumber?: string };
+        if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
+        const latestRaw = await readTempoRpc("eth_blockNumber", []);
+        const deploymentBlock = BigInt(deploymentReceipt.blockNumber);
+        const latestBlock = BigInt(latestRaw);
+        const maxRange = 100000n;
+        const fromBlock = latestBlock > maxRange ? latestBlock - maxRange + 1n : deploymentBlock;
+        const effectiveFrom = fromBlock > deploymentBlock ? fromBlock : deploymentBlock;
+        const raw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CREATED_TOPIC] }]);
         const logs = JSON.parse(raw) as Array<{ topics?: string[] }>;
         const ids = logs.map((log) => log.topics?.[1] ? BigInt(log.topics[1]).toString() : "").filter(Boolean).slice(-10).reverse();
         const loaded = [];
