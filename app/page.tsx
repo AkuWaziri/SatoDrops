@@ -1,9 +1,44 @@
 "use client";
 
-import { ArrowUpRight, Check, ChevronDown, Copy, Link2, Sparkles, Wallet } from "lucide-react";
-import { useState } from "react";
+import { ArrowUpRight, Sparkles, Wallet } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 
-const tokens = ["USDC", "USDT", "pathUSD"];
+declare global {
+  interface Window {
+    ethereum?: {
+      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+      on?: (event: string, handler: (...args: unknown[]) => void) => void;
+      removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+    };
+  }
+}
+
+const TEMPO_CHAIN_ID = "0x1079";
+const TEMPO_CHAIN = {
+  chainId: TEMPO_CHAIN_ID,
+  chainName: "Tempo Mainnet",
+  nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 },
+  rpcUrls: ["https://rpc.tempo.xyz"],
+  blockExplorerUrls: ["https://explore.tempo.xyz"],
+};
+
+const tokens = [
+  { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
+  { symbol: "USDT", address: "0x20c00000000000000000000014f22ca97301eb73", decimals: 6 },
+  { symbol: "pathUSD", address: "0x20c0000000000000000000000000000000000000", decimals: 6 },
+];
+
+const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
+
+async function readTokenBalance(provider: NonNullable<Window["ethereum"]>, token: string, owner: string) {
+  const selector = "0x70a08231";
+  const paddedOwner = owner.slice(2).padStart(64, "0");
+  const raw = await provider.request({
+    method: "eth_call",
+    params: [{ to: token, data: selector + paddedOwner }, "latest"],
+  }) as string;
+  return Number(BigInt(raw || "0")) / 1_000_000;
+}
 
 export default function Home() {
   const [token, setToken] = useState("USDC");
@@ -11,15 +46,75 @@ export default function Home() {
   const [claims, setClaims] = useState("10");
   const [message, setMessage] = useState("Bug bounty — first valid report");
   const [created, setCreated] = useState(false);
+  const [account, setAccount] = useState("");
+  const [balances, setBalances] = useState<Record<string, number>>({});
+  const [walletError, setWalletError] = useState("");
 
   const total = (Number(amount || 0) * Number(claims || 0)).toFixed(2);
+  const selectedToken = useMemo(() => tokens.find((t) => t.symbol === token) ?? tokens[0], [token]);
+
+  async function connectWallet() {
+    setWalletError("");
+    if (!window.ethereum) {
+      setWalletError("No EVM wallet detected. Install a wallet extension first.");
+      return;
+    }
+
+    try {
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" }) as string[];
+      const current = accounts?.[0];
+      if (!current) return;
+
+      const chainId = await window.ethereum.request({ method: "eth_chainId" }) as string;
+      if (chainId.toLowerCase() !== TEMPO_CHAIN_ID) {
+        try {
+          await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TEMPO_CHAIN_ID }] });
+        } catch (switchError) {
+          const code = (switchError as { code?: number })?.code;
+          if (code === 4902) {
+            await window.ethereum.request({ method: "wallet_addEthereumChain", params: [TEMPO_CHAIN] });
+          } else {
+            throw switchError;
+          }
+        }
+      }
+
+      setAccount(current);
+      const nextBalances: Record<string, number> = {};
+      for (const item of tokens) {
+        try {
+          nextBalances[item.symbol] = await readTokenBalance(window.ethereum, item.address, current);
+        } catch {
+          nextBalances[item.symbol] = 0;
+        }
+      }
+      setBalances(nextBalances);
+    } catch (error) {
+      setWalletError(error instanceof Error ? error.message : "Wallet connection failed.");
+    }
+  }
+
+  useEffect(() => {
+    if (!window.ethereum?.on) return;
+    const handleAccounts = (...args: unknown[]) => {
+      const next = args[0] as string[] | undefined;
+      if (!next?.[0]) {
+        setAccount("");
+        setBalances({});
+      }
+    };
+    window.ethereum.on("accountsChanged", handleAccounts);
+    return () => window.ethereum?.removeListener?.("accountsChanged", handleAccounts);
+  }, []);
 
   return (
     <main>
       <nav className="nav">
         <div className="brand"><span className="brand-mark">S</span><span>SatoDrops</span></div>
-        <div className="nav-links"><a href="#how">How it works</a><a href="#create">Create a drop</a><button className="wallet-btn"><Wallet size={16}/> Connect wallet</button></div>
+        <div className="nav-links"><a href="#how">How it works</a><a href="#create">Create a drop</a><button className="wallet-btn" onClick={connectWallet}><Wallet size={16}/> {account ? shortAddress(account) : "Connect wallet"}</button></div>
       </nav>
+
+      {walletError && <div className="wallet-error">{walletError}</div>}
 
       <section className="hero">
         <div className="hero-copy">
@@ -49,7 +144,8 @@ export default function Home() {
         <div className="builder">
           <div className="form-card">
             <label>Reward token</label>
-            <div className="token-row">{tokens.map(t=><button key={t} className={token===t?"token active":"token"} onClick={()=>setToken(t)}>{t==="USDC"?"◉":t==="USDT"?"₮":"◇"} {t}</button>)}</div>
+            <div className="token-row">{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>{t.symbol==="USDC"?"◉":t.symbol==="USDT"?"₮":"◇"} {t.symbol}</button>)}</div>
+            {account && <div className="balance-row"><span>Connected balance</span><b>{(balances[selectedToken.symbol] ?? 0).toFixed(2)} {selectedToken.symbol}</b></div>}
             <div className="two-col">
               <div><label>Reward per person</label><div className="input-wrap"><input value={amount} onChange={e=>setAmount(e.target.value)} inputMode="decimal"/><span>{token}</span></div></div>
               <div><label>Number of claims</label><div className="input-wrap"><input value={claims} onChange={e=>setClaims(e.target.value)} inputMode="numeric"/><span>people</span></div></div>
@@ -72,7 +168,7 @@ export default function Home() {
 
       <section id="how" className="how"><div className="eyebrow">THE LOOP</div><h2>Create. Fund. Share. Claim.</h2><div className="steps">{[["01","Create","Choose a stablecoin, amount and purpose."],["02","Fund","Approve the total reward on Tempo."],["03","Share","Send the claim link anywhere."],["04","Claim","A recipient connects and gets paid."]].map(([n,t,d])=><div className="step" key={n}><span>{n}</span><h3>{t}</h3><p>{d}</p></div>)}</div></section>
 
-      <footer><div className="brand"><span className="brand-mark">S</span><span>SatoDrops</span></div><span>Tiny programmable rewards, powered by Tempo.</span><a href="https://tempo.xyz" target="_blank">Built for Tempo <ArrowUpRight size={14}/></a></footer>
+      <footer><div className="brand"><span className="brand-mark">S</span><span>SatoDrops</span></div><span>Tiny programmable rewards, powered by Tempo.</span><a href="https://tempo.xyz" target="_blank" rel="noreferrer">Built for Tempo <ArrowUpRight size={14}/></a></footer>
     </main>
   );
 }
