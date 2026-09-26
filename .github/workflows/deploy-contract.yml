@@ -31,10 +31,14 @@ jobs:
         run: |
           test -n "$PRIVATE_KEY"
           test -n "$FEE_RECIPIENT"
-          OUTPUT="$(forge create contracts/SatoDrops.sol:SatoDrops             --rpc-url https://rpc.tempo.xyz             --private-key "$PRIVATE_KEY"             --constructor-args "$FEE_RECIPIENT"             --broadcast)"
+
+          OUTPUT="$(forge create contracts/SatoDrops.sol:SatoDrops             --rpc-url https://rpc.tempo.xyz             --private-key "$PRIVATE_KEY"             --broadcast             --constructor-args "$FEE_RECIPIENT")"
+
           echo "$OUTPUT"
+
           ADDRESS="$(printf '%s\n' "$OUTPUT" | sed -n 's/^Deployed to: //p' | tail -n 1)"
           test -n "$ADDRESS"
+
           echo "SATODROPS_CONTRACT_ADDRESS=$ADDRESS" >> "$GITHUB_STEP_SUMMARY"
           echo "NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS=$ADDRESS" >> "$GITHUB_STEP_SUMMARY"
 
