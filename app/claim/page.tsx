@@ -19,6 +19,7 @@ const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS ??
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
 const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
+const DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
 
 const tokens: Record<string, { symbol: string; address: string; decimals: number }> = {
   "0x20c000000000000000000000b9537d11c60e8b50": { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
@@ -73,14 +74,34 @@ async function rpc(method: string, params: unknown[]) {
 
 async function getDropLogs(dropId: string) {
   const paddedId = BigInt(dropId).toString(16).padStart(64, "0");
-  const response = await fetch(TEMPO_RPC, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{ address: SATODROPS_CONTRACT, fromBlock: "0x0", toBlock: "latest", topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId] }] }),
-  });
-  if (!response.ok) throw new Error("Tempo RPC request failed.");
-  const body = await response.json() as { result?: Array<{ topics?: string[]; data?: string; transactionHash?: string }>; error?: { message?: string } };
-  if (body.error) throw new Error(body.error.message ?? "Tempo RPC error.");
-  return body.result ?? [];
+  const deploymentRaw = await rpc("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
+  if (!deploymentRaw) throw new Error("Could not locate the SatoDrops deployment transaction.");
+  const deploymentReceipt = JSON.parse(deploymentRaw) as { blockNumber?: string };
+  if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
+
+  const fromBlock = BigInt(deploymentReceipt.blockNumber);
+  const latestRaw = await rpc("eth_blockNumber", []);
+  const latestBlock = BigInt(latestRaw);
+  const maxRange = 100000n;
+  const logs: Array<{ topics?: string[]; data?: string; transactionHash?: string }> = [];
+
+  for (let start = fromBlock; start <= latestBlock; start += maxRange + 1n) {
+    const end = start + maxRange > latestBlock ? latestBlock : start + maxRange;
+    const response = await fetch(TEMPO_RPC, {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "eth_getLogs",
+        params: [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16), topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId }],
+      }),
+    });
+    if (!response.ok) throw new Error("Tempo RPC request failed.");
+    const body = await response.json() as { result?: Array<{ topics?: string[]; data?: string; transactionHash?: string }>; error?: { message?: string } };
+    if (body.error) throw new Error(body.error.message ?? "Tempo RPC error.");
+    logs.push(...(body.result ?? []));
+  }
+  return logs;
 }
 
 async function waitForReceipt(hash: string) {
