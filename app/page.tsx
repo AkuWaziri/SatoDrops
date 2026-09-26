@@ -4,15 +4,10 @@ import { ArrowUpRight, Sparkles, Wallet } from "lucide-react";
 import { encodeFunctionData, parseUnits } from "viem";
 import { useEffect, useMemo, useState } from "react";
 
-declare global {
-  interface Window {
-    ethereum?: {
-      request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
-      on?: (event: string, handler: (...args: unknown[]) => void) => void;
-      removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
-    };
-  }
-}
+type Eip1193Provider = NonNullable<Window["ethereum"]> & {
+  on?: (event: string, handler: (...args: unknown[]) => void) => void;
+  removeListener?: (event: string, handler: (...args: unknown[]) => void) => void;
+};
 
 const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_CHAIN = {
@@ -241,7 +236,8 @@ export default function Home() {
   }
 
   useEffect(() => {
-    if (!window.ethereum?.on) return;
+    const provider = window.ethereum as Eip1193Provider | undefined;
+    if (!provider?.on) return;
     const handleAccounts = (...args: unknown[]) => {
       const next = args[0] as string[] | undefined;
       if (!next?.[0]) {
@@ -249,8 +245,8 @@ export default function Home() {
         setBalances({});
       }
     };
-    window.ethereum.on("accountsChanged", handleAccounts);
-    return () => window.ethereum?.removeListener?.("accountsChanged", handleAccounts);
+    provider.on("accountsChanged", handleAccounts);
+    return () => provider.removeListener?.("accountsChanged", handleAccounts);
   }, []);
 
   return (
