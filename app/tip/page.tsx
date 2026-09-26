@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowUpRight, Sparkles, Wallet } from "lucide-react";
 import { encodeFunctionData, keccak256, parseUnits, toBytes } from "viem";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_RPC = "https://rpc.tempo.xyz";
@@ -19,6 +19,11 @@ const abi=[{type:"function",name:"createTip",stateMutability:"nonpayable",inputs
   {name:"identityType",type:"uint8"},{name:"identityHash",type:"bytes32"},{name:"message",type:"string"}
 ],outputs:[{name:"tipId",type:"uint256"}]}] as const;
 const erc20Abi=[{type:"function",name:"approve",stateMutability:"nonpayable",inputs:[{name:"spender",type:"address"},{name:"amount",type:"uint256"}],outputs:[{name:"",type:"bool"}]}] as const;
+const TIP_CREATED_TOPIC=keccak256(toBytes("TipCreated(uint256,address,address,uint256,uint256,uint8,bytes32,uint256,uint256)"));
+const TIP_CLAIMED_TOPIC=keccak256(toBytes("TipClaimed(uint256,address,uint256,uint256)"));
+const TIPS_DEPLOYMENT_TX="0x86205da7139e30e48c04e37a3a2d6c80458d334ebeec7cfe5fc2dc8d5990aafc";
+const tipViewAbi=[{type:"function",name:"tips",stateMutability:"view",inputs:[{name:"tipId",type:"uint256"}],outputs:[{name:"creator",type:"address"},{name:"token",type:"address"},{name:"amount",type:"uint128"},{name:"expiresAt",type:"uint64"},{name:"claimed",type:"bool"},{name:"closed",type:"bool"},{name:"identityType",type:"uint8"},{name:"identityHash",type:"bytes32"},{name:"message",type:"string"}]}] as const;
+async function rpc(method:string,params:unknown[]){const response=await fetch(TEMPO_RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})});if(!response.ok)throw new Error("Tempo RPC request failed.");const body=await response.json() as {result?:unknown;error?:{message?:string}};if(body.error)throw new Error(body.error.message??"Tempo RPC error.");return body.result;}
 const TEMPO_CHAIN={chainId:TEMPO_CHAIN_ID,chainName:"Tempo Mainnet",nativeCurrency:{name:"USD",symbol:"USD",decimals:18},rpcUrls:[TEMPO_RPC],blockExplorerUrls:[EXPLORER]};
 
 async function receipt(provider:NonNullable<Window["ethereum"]>,hash:string){
@@ -44,6 +49,11 @@ export default function TipPage(){
       setAccount(a[0]);
     }catch(e){setError(e instanceof Error?e.message:"Wallet connection failed.");}
   }
+
+  const [recentTips,setRecentTips]=useState<Array<{id:string;creator:string;token:typeof tokens[number];amount:bigint;claimed:boolean;closed:boolean;creationTx:string;claimTxs:string[]}>>([]);
+  const [tipsLoading,setTipsLoading]=useState(true);
+
+  useEffect(()=>{const load=async()=>{try{if(!SATOTIPS_CONTRACT||!account){setRecentTips([]);return;}const dep=await rpc("eth_getTransactionReceipt",[TIPS_DEPLOYMENT_TX]) as {blockNumber?:string};if(!dep.blockNumber)throw new Error("Could not determine the SatoTips deployment block.");const latest=BigInt(String(await rpc("eth_blockNumber",[])));const deployment=BigInt(dep.blockNumber);const max=100000n;const candidate=latest>max?latest-max+1n:deployment;const from=candidate>deployment?candidate:deployment;const raw=await rpc("eth_getLogs",[{address:SATOTIPS_CONTRACT,fromBlock:"0x"+from.toString(16),toBlock:"0x"+latest.toString(16),topics:[TIP_CREATED_TOPIC]}]) as Array<{topics?:string[];transactionHash?:string}>;const wallet=account.toLowerCase();const owned=raw.filter(l=>(l.topics?.[2]??"").slice(-40).toLowerCase()===wallet.slice(2));const ids=owned.map(l=>l.topics?.[1]?BigInt(l.topics[1]).toString():"").filter(Boolean).slice(-10).reverse();const claimRaw=await rpc("eth_getLogs",[{address:SATOTIPS_CONTRACT,fromBlock:"0x"+from.toString(16),toBlock:"0x"+latest.toString(16),topics:[TIP_CLAIMED_TOPIC]}]) as Array<{topics?:string[];transactionHash?:string}>;const loaded=[];for(const id of ids){const creation=owned.find(l=>l.topics?.[1]&&BigInt(l.topics[1]).toString()===id);const claimTxs=claimRaw.filter(l=>l.topics?.[1]&&BigInt(l.topics[1]).toString()===id&&l.transactionHash).map(l=>l.transactionHash as string);const data=String(await rpc("eth_call",[{to:SATOTIPS_CONTRACT,data:encodeFunctionData({abi:tipViewAbi,functionName:"tips",args:[BigInt(id)]})},"latest"]));const hex=data.replace(/^0x/,"");const word=(i:number)=>hex.slice(i*64,(i+1)*64);const tokenAddress="0x"+word(1).slice(24);const tokenInfo=tokens.find(t=>t.address.toLowerCase()===tokenAddress.toLowerCase());if(tokenInfo)loaded.push({id,creator:"0x"+word(0).slice(24),token:tokenInfo,amount:BigInt("0x"+word(2)),claimed:BigInt("0x"+word(4))!==0n,closed:BigInt("0x"+word(5))!==0n,creationTx:creation?.transactionHash??"",claimTxs});}setRecentTips(loaded);}catch(e){console.error("Could not load existing tips",e);}finally{setTipsLoading(false);}};void load();},[account]);
 
   async function create(){
     setError(""); if(!window.ethereum)return setError("No EVM wallet detected."); if(!account){await connect();return;}
@@ -82,6 +92,9 @@ export default function TipPage(){
     <div className="summary-card" style={{marginTop:18}}><div className="summary-label">TIP SUMMARY</div><div className="summary-total">{amount||"0"} <span>{token}</span></div>
     <div className="summary-line"><span>Creation fee · 1%</span><b>{creationFee.toFixed(2)} {token}</b></div><div className="summary-line"><span>Claim fee reserved · 0.5%</span><b>{claimFee.toFixed(2)} {token}</b></div>
     <div className="summary-line"><span>Total to fund</span><b>{total} {token}</b></div><div className="summary-note">The recipient receives the full tip. Identity verification is required before claiming.</div></div>
-    {account&&<div className="claim-wallet"><Wallet size={12}/> Connected {account.slice(0,6)}…{account.slice(-4)}</div>}
+    {account&&<div className="claim-wallet"><Wallet size={12}/> Connected {account.slice(0,6)}…{account.slice(-4)}</div>}<section className="existing-drops">
+  <div className="section-heading"><div><div className="eyebrow">YOUR ONCHAIN TIPS</div><h2>Recent tips</h2></div><span className="step-count">PRIVATE TO CONNECTED WALLET</span></div>
+  {!account ? <div className="existing-empty">Connect your wallet to view your tips.</div> : tipsLoading ? <div className="existing-empty">Loading your tips…</div> : recentTips.length === 0 ? <div className="existing-empty">No tips created by this wallet yet.</div> : <div className="existing-grid">{recentTips.map(item=><a className="existing-drop" href={"/tip/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{item.claimed?"CLAIMED":item.closed?"CLOSED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{(Number(item.amount)/10**item.token.decimals).toFixed(2)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed?"Claimed":"Awaiting claim"}</span><span>1 recipient</span></div><div className="existing-creator">Created by {item.creator.slice(0,6)}…{item.creator.slice(-4)} <ArrowUpRight size={13}/></div>{item.creationTx&&<div className="existing-tx"><span>Tip TX</span><a href={EXPLORER+"/tx/"+item.creationTx} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length>0&&<div className="existing-tx"><span>Claim transaction</span><a href={EXPLORER+"/tx/"+item.claimTxs[item.claimTxs.length-1]} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()}>View claim <ArrowUpRight size={12}/></a></div>}</a>)}</div>}
+</section>
   </div></section></main>;
 }
