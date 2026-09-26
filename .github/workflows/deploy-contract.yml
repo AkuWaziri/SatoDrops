@@ -28,7 +28,14 @@ jobs:
         run: |
           test -n "$PRIVATE_KEY"
           test -n "$FEE_RECIPIENT"
-          forge create contracts/SatoDrops.sol:SatoDrops             --rpc-url https://rpc.tempo.xyz             --private-key "$PRIVATE_KEY"             --constructor-args "$FEE_RECIPIENT"             --broadcast
+          OUTPUT="$(forge create contracts/SatoDrops.sol:SatoDrops             --rpc-url https://rpc.tempo.xyz             --private-key "$PRIVATE_KEY"             --constructor-args "$FEE_RECIPIENT"             --broadcast)"
+          echo "$OUTPUT"
+          ADDRESS="$(printf '%s\n' "$OUTPUT" | sed -n 's/^Deployed to: //p' | tail -n 1)"
+          test -n "$ADDRESS"
+          echo "SATODROPS_CONTRACT_ADDRESS=$ADDRESS" >> "$GITHUB_STEP_SUMMARY"
+          echo "NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS=$ADDRESS" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deployment reminder
-        run: echo "Copy the deployed contract address into NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS."
+        run: |
+          echo "Deployment complete."
+          echo "Set NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS to the deployed address in the frontend hosting environment."
