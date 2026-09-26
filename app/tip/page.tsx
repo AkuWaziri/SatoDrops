@@ -29,7 +29,7 @@ const abi=[{type:"function",name:"createTip",stateMutability:"nonpayable",inputs
 const erc20Abi=[{type:"function",name:"approve",stateMutability:"nonpayable",inputs:[{name:"spender",type:"address"},{name:"amount",type:"uint256"}],outputs:[{name:"",type:"bool"}]}] as const;
 const TIP_CREATED_TOPIC=keccak256(toBytes("TipCreated(uint256,address,address,uint256,uint256,uint8,bytes32,uint256,uint256)"));
 const TIP_CLAIMED_TOPIC=keccak256(toBytes("TipClaimed(uint256,address,uint256,uint256)"));
-const TIPS_DEPLOYMENT_TX="0x86205da7139e30e48c04e37a3a2d6c80458d334ebeec7cfe5fc2dc8d5990aafc";
+const TIPS_DEPLOYMENT_TX="0xc9b0fcdb368e37f713b460947c891d294e37ff355fcc33907d4adecfadcd67b1";
 const tipViewAbi=[{type:"function",name:"tips",stateMutability:"view",inputs:[{name:"tipId",type:"uint256"}],outputs:[{name:"creator",type:"address"},{name:"token",type:"address"},{name:"amount",type:"uint128"},{name:"expiresAt",type:"uint64"},{name:"claimed",type:"bool"},{name:"closed",type:"bool"},{name:"identityType",type:"uint8"},{name:"identityHash",type:"bytes32"},{name:"message",type:"string"}]}] as const;
 async function rpc(method:string,params:unknown[]){const response=await fetch(TEMPO_RPC,{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({jsonrpc:"2.0",id:1,method,params})});if(!response.ok)throw new Error("Tempo RPC request failed.");const body=await response.json() as {result?:unknown;error?:{message?:string}};if(body.error)throw new Error(body.error.message??"Tempo RPC error.");return body.result;}
 const TEMPO_CHAIN={chainId:TEMPO_CHAIN_ID,chainName:"Tempo Mainnet",nativeCurrency:{name:"USD",symbol:"USD",decimals:18},rpcUrls:[TEMPO_RPC],blockExplorerUrls:[EXPLORER]};
