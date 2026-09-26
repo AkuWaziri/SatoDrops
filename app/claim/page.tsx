@@ -60,7 +60,7 @@ const abi = [
   },
 ] as const;
 
-async function rpc(method: string, params: unknown[]) {
+async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   const response = await fetch(TEMPO_RPC, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -69,19 +69,19 @@ async function rpc(method: string, params: unknown[]) {
   if (!response.ok) throw new Error("Tempo RPC request failed.");
   const body = await response.json() as { result?: unknown; error?: { message?: string } };
   if (body.error) throw new Error(body.error.message ?? "Tempo RPC error.");
-  return body.result;
+  return body.result as T;
 }
 
 async function getDropLogs(dropId: string) {
   const paddedId = BigInt(dropId).toString(16).padStart(64, "0");
-  const deploymentRaw = await rpc("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
+  const deploymentRaw = await rpc<{ blockNumber?: string } | null>("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
   if (!deploymentRaw) throw new Error("Could not locate the SatoDrops deployment transaction.");
-  const deploymentReceipt = deploymentRaw as { blockNumber?: string };
+  const deploymentReceipt = deploymentRaw;
   if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
 
   const fromBlock = BigInt(deploymentReceipt.blockNumber as string);
-  const latestRaw = await rpc("eth_blockNumber", []);
-  const latestBlock = BigInt(latestRaw as string);
+  const latestRaw = await rpc<string>("eth_blockNumber", []);
+  const latestBlock = BigInt(latestRaw);
   const maxRange = 100000n;
   const logs: Array<{ topics?: string[]; data?: string; transactionHash?: string }> = [];
 
@@ -106,9 +106,9 @@ async function getDropLogs(dropId: string) {
 
 async function waitForReceipt(hash: string) {
   for (let attempt = 0; attempt < 40; attempt += 1) {
-    const raw = await rpc("eth_getTransactionReceipt", [hash]);
+    const raw = await rpc<{ status?: string } | null>("eth_getTransactionReceipt", [hash]);
     if (raw) {
-      const receipt = raw as { status?: string };
+      const receipt = raw;
       if (receipt.status === "0x0") throw new Error("Claim transaction reverted on Tempo.");
       return receipt;
     }
@@ -181,7 +181,7 @@ export default function ClaimPage() {
     }
     const load = async () => {
       try {
-        const data = await rpc("eth_call", [{
+        const data = await rpc<string>("eth_call", [{
           to: SATODROPS_CONTRACT,
           data: encodeFunctionData({ abi, functionName: "drops", args: [BigInt(id)] }),
         }, "latest"]);
@@ -222,7 +222,7 @@ export default function ClaimPage() {
       }
       setAccount(current);
       const data = encodeFunctionData({ abi, functionName: "hasClaimed", args: [BigInt(dropId), current as `0x${string}`] });
-      const raw = await rpc("eth_call", [{ to: SATODROPS_CONTRACT, data }, "latest"]);
+      const raw = await rpc<string>("eth_call", [{ to: SATODROPS_CONTRACT, data }, "latest"]);
       setAlreadyClaimed(BigInt(raw) !== 0n);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Wallet connection failed.");
