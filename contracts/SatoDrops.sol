@@ -11,6 +11,8 @@ contract SatoDrops {
     uint256 public constant CLAIM_FEE_BPS = 50; // 0.5%
     address public immutable feeRecipient;
 
+    uint256 private unlocked = 1;
+
     struct Drop {
         address creator;
         address token;
@@ -50,6 +52,14 @@ contract SatoDrops {
     error SoldOut();
     error TransferFailed();
     error NotCreator();
+    error Reentrant();
+
+    modifier nonReentrant() {
+        if (unlocked != 1) revert Reentrant();
+        unlocked = 2;
+        _;
+        unlocked = 1;
+    }
 
     constructor(address _feeRecipient) {
         if (_feeRecipient == address(0)) revert InvalidToken();
@@ -62,7 +72,7 @@ contract SatoDrops {
         uint64 maxClaims,
         uint64 expiresAt,
         string calldata message
-    ) external returns (uint256 dropId) {
+    ) external nonReentrant returns (uint256 dropId) {
         if (token == address(0)) revert InvalidToken();
         if (amountPerClaim == 0) revert InvalidAmount();
         if (maxClaims == 0) revert InvalidClaims();
@@ -71,10 +81,9 @@ contract SatoDrops {
         uint256 rewardTotal = uint256(amountPerClaim) * uint256(maxClaims);
         uint256 creationFee = (rewardTotal * CREATION_FEE_BPS) / 10_000;
         uint256 claimFeesReserved = (rewardTotal * CLAIM_FEE_BPS) / 10_000;
-        uint256 totalFunding = rewardTotal + creationFee + claimFeesReserved;
 
-        if (!IERC20(token).transferFrom(msg.sender, feeRecipient, creationFee)) revert TransferFailed();
-        if (!IERC20(token).transferFrom(msg.sender, address(this), rewardTotal + claimFeesReserved)) revert TransferFailed();
+        _safeTransferFrom(msg.sender, feeRecipient, creationFee);
+        _safeTransferFrom(msg.sender, address(this), rewardTotal + claimFeesReserved);
 
         dropId = nextDropId++;
         drops[dropId] = Drop({
@@ -99,10 +108,9 @@ contract SatoDrops {
             creationFee,
             claimFeesReserved
         );
-        totalFunding;
     }
 
-    function claim(uint256 dropId) external {
+    function claim(uint256 dropId) external nonReentrant {
         Drop storage drop = drops[dropId];
         if (drop.creator == address(0)) revert InvalidAmount();
         if (drop.closed) revert Closed();
@@ -110,19 +118,19 @@ contract SatoDrops {
         if (drop.claimed >= drop.maxClaims) revert SoldOut();
         if (hasClaimed[dropId][msg.sender]) revert AlreadyClaimed();
 
-        hasClaimed[dropId][msg.sender] = true;
-        drop.claimed += 1;
-
         uint256 reward = uint256(drop.amountPerClaim);
         uint256 claimFee = (reward * CLAIM_FEE_BPS) / 10_000;
 
-        if (!IERC20(drop.token).transfer(msg.sender, reward)) revert TransferFailed();
-        if (!IERC20(drop.token).transfer(feeRecipient, claimFee)) revert TransferFailed();
+        hasClaimed[dropId][msg.sender] = true;
+        drop.claimed += 1;
+
+        _safeTransfer(drop.token, msg.sender, reward);
+        _safeTransfer(drop.token, feeRecipient, claimFee);
 
         emit DropClaimed(dropId, msg.sender, reward, claimFee);
     }
 
-    function closeExpiredDrop(uint256 dropId) external {
+    function closeExpiredDrop(uint256 dropId) external nonReentrant {
         Drop storage drop = drops[dropId];
         if (drop.creator == address(0)) revert InvalidAmount();
         if (msg.sender != drop.creator) revert NotCreator();
@@ -130,11 +138,34 @@ contract SatoDrops {
         if (drop.expiresAt == 0 || block.timestamp < drop.expiresAt) revert NotExpired();
 
         drop.closed = true;
-        uint256 remaining = uint256(drop.amountPerClaim) * (uint256(drop.maxClaims) - uint256(drop.claimed));
-        uint256 remainingClaimFees = (remaining * CLAIM_FEE_BPS) / 10_000;
-        uint256 refund = remaining + remainingClaimFees;
 
-        if (refund > 0 && !IERC20(drop.token).transfer(drop.creator, refund)) revert TransferFailed();
+        uint256 remainingClaims = uint256(drop.maxClaims) - uint256(drop.claimed);
+        uint256 remainingRewards = uint256(drop.amountPerClaim) * remainingClaims;
+        uint256 remainingClaimFees = (remainingRewards * CLAIM_FEE_BPS) / 10_000;
+        uint256 refund = remainingRewards + remainingClaimFees;
+
+        if (refund > 0) {
+            _safeTransfer(drop.token, drop.creator, refund);
+        }
+
         emit DropClosed(dropId, refund);
+    }
+
+    function _safeTransfer(address token, address to, uint256 value) private {
+        (bool success, bytes memory data) = token.call(
+            abi.encodeWithSelector(IERC20.transfer.selector, to, value)
+        );
+        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
+            revert TransferFailed();
+        }
+    }
+
+    function _safeTransferFrom(address from, address to, uint256 value) private {
+        (bool success, bytes memory data) = msg.sender.call(
+            abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value)
+        );
+        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
+            revert TransferFailed();
+        }
     }
 }
