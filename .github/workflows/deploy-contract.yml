@@ -16,12 +16,13 @@ jobs:
       - name: Install Tempo Foundry
         run: |
           curl -L https://foundry.paradigm.xyz | bash
-          export PATH="$HOME/.foundry/bin:$PATH"
+          export PATH="$HOME/.config/.foundry/bin:$PATH"
+          echo "$HOME/.config/.foundry/bin" >> "$GITHUB_PATH"
           foundryup -n tempo
 
       - name: Install forge-std
         run: |
-          export PATH="$HOME/.foundry/bin:$PATH"
+          export PATH="$HOME/.config/.foundry/bin:$PATH"
           forge install foundry-rs/forge-std --no-commit
 
       - name: Build contracts
