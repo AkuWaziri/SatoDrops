@@ -82,8 +82,8 @@ contract SatoDrops {
         uint256 creationFee = (rewardTotal * CREATION_FEE_BPS) / 10_000;
         uint256 claimFeesReserved = (rewardTotal * CLAIM_FEE_BPS) / 10_000;
 
-        _safeTransferFrom(msg.sender, feeRecipient, creationFee);
-        _safeTransferFrom(msg.sender, address(this), rewardTotal + claimFeesReserved);
+        _safeTransferFrom(token, msg.sender, feeRecipient, creationFee);
+        _safeTransferFrom(token, msg.sender, address(this), rewardTotal + claimFeesReserved);
 
         dropId = nextDropId++;
         drops[dropId] = Drop({
@@ -160,8 +160,8 @@ contract SatoDrops {
         }
     }
 
-    function _safeTransferFrom(address from, address to, uint256 value) private {
-        (bool success, bytes memory data) = msg.sender.call(
+    function _safeTransferFrom(address token, address from, address to, uint256 value) private {
+        (bool success, bytes memory data) = token.call(
             abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value)
         );
         if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
