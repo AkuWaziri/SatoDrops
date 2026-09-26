@@ -259,6 +259,7 @@ export default function ClaimPage() {
   const explorerLink = successHash ? `${EXPLORER}/tx/${successHash}` : "";
   const dropExplorerLink = dropTxHash ? `${EXPLORER}/tx/${dropTxHash}` : "";
   const claimsRemaining = drop ? drop.maxClaims - drop.claimed : 0n;
+  const claimProgress = drop && drop.maxClaims > 0n ? Math.min(100, Number((drop.claimed * 10000n) / drop.maxClaims) / 100) : 0;
   const allClaimed = !!drop && drop.claimed >= drop.maxClaims;
 
   return (
@@ -277,8 +278,8 @@ export default function ClaimPage() {
               <div className="claim-token">{token?.symbol ?? "TOKEN"}</div>
               <div className="claim-amount">{formatUnits(drop.amountPerClaim, token?.decimals ?? 6)} <span>{token?.symbol ?? ""}</span></div>
               <p className="claim-message">{drop.message || "A SatoDrops reward is waiting for you."}</p>
-              <div className="claim-meta"><span>{drop.claimed.toString()} / {drop.maxClaims.toString()} claimed</span><span>Creator {shortAddress(drop.creator)}</span></div>
-              <div className="drop-progress"><div style={{ width: `${Math.min(100, Number(drop.claimed * 100n / drop.maxClaims))}%` }}/></div>
+              <div className="claim-meta"><span>{drop.claimed.toString()} / {drop.maxClaims.toString()} claimed</span><span>{claimProgress.toFixed(2)}% claimed</span></div>
+              <div className="drop-progress"><div style={{ width: `${claimProgress}%` }}/></div>
               <div className={allClaimed ? "drop-status complete" : "drop-status"}>{allClaimed ? "All claims completed" : `${claimsRemaining.toString()} claim${claimsRemaining === 1n ? "" : "s"} remaining`}</div>
               {dropTxHash && <a className="drop-tx-link" href={dropExplorerLink} target="_blank" rel="noreferrer">View drop creation transaction on Tempo Explorer <ArrowUpRight size={13}/></a>}
               {expired && <div className="wallet-error">This drop has expired.</div>}
