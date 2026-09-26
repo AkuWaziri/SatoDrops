@@ -93,7 +93,7 @@ async function getDropLogs(dropId: string) {
         jsonrpc: "2.0",
         id: 1,
         method: "eth_getLogs",
-        params: [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16), topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId }],
+        params: [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16), topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId] }],
       }),
     });
     if (!response.ok) throw new Error("Tempo RPC request failed.");
