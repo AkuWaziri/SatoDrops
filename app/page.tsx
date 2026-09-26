@@ -320,10 +320,6 @@ export default function Home() {
       </section>
 
 
-      <section className="existing-drops">
-        <div className="section-heading"><div><div className="eyebrow">ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">LIVE FROM TEMPO</span></div>
-        {recentDropsLoading ? <div className="existing-empty">Loading existing drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops found yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div></a>; })}</div>}
-      </section>
 
       <section id="create" className="builder-section">
         <div className="section-heading"><div><div className="eyebrow">CREATE A DROP</div><h2>Turn a little value into an action.</h2></div><span className="step-count">01 / 02</span></div>
@@ -353,6 +349,11 @@ export default function Home() {
             <div className="summary-note">You fund the rewards plus the 1% creation fee and 0.5% claim fees upfront. Claimants receive the full reward amount.</div>
           </aside>
         </div>
+      </section>
+
+      <section className="existing-drops">
+        <div className="section-heading"><div><div className="eyebrow">ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">LIVE FROM TEMPO</span></div>
+        {recentDropsLoading ? <div className="existing-empty">Loading existing drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops found yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div></a>; })}</div>}
       </section>
 
 
