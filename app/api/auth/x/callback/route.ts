@@ -9,6 +9,7 @@ export async function GET(request: NextRequest) {
   const clientId = process.env.X_CLIENT_ID;
   const clientSecret = process.env.X_CLIENT_SECRET;
   const redirectUri = process.env.X_REDIRECT_URI;
+  const returnPath = request.cookies.get("satodrops_x_return")?.value ?? "/tip";
 
   if (!code || !state || !oauthCookie || !clientId || !clientSecret || !redirectUri) {
     return NextResponse.json({ error: "Invalid X authentication callback." }, { status: 400 });
@@ -39,10 +40,11 @@ export async function GET(request: NextRequest) {
   if (!username) return NextResponse.json({ error: "X account has no username." }, { status: 502 });
 
   const session = createSession({ provider: "x", identity: normalizeIdentity("x", username), exp: Math.floor(Date.now() / 1000) + 3600 });
-  const response = NextResponse.redirect(new URL("/tip?auth=x", request.url));
+  const response = NextResponse.redirect(new URL(returnPath + (returnPath.includes("?") ? "&" : "?") + "auth=x", request.url));
   response.cookies.set("satodrops_tip_session", session, {
     httpOnly: true, secure: true, sameSite: "lax", maxAge: 3600, path: "/"
   });
   response.cookies.delete("satodrops_x_oauth");
+  response.cookies.delete("satodrops_x_return");
   return response;
 }
