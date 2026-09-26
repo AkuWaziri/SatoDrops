@@ -19,6 +19,7 @@ const TEMPO_CHAIN = {
 };
 
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS ?? "";
+const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 
 const tokens = [
   { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
@@ -189,6 +190,7 @@ export default function Home() {
           from: account,
           to: selectedToken.address,
           data: approveData,
+          feeToken: PATH_USD_FEE_TOKEN,
         }],
       }) as string;
 
@@ -212,6 +214,7 @@ export default function Home() {
           from: account,
           to: SATODROPS_CONTRACT,
           data: createData,
+          feeToken: PATH_USD_FEE_TOKEN,
         }],
       }) as string;
 
