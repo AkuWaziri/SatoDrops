@@ -220,8 +220,19 @@ export default function Home() {
         }],
       }) as string;
 
-      await waitForReceipt(window.ethereum, createHash);
-      setCreated(true);
+      const createReceipt = await waitForReceipt(window.ethereum, createHash);
+
+      const logs = (createReceipt as { logs?: Array<{ address?: string; topics?: string[] }> }).logs ?? [];
+      const contractLog = logs.find(
+        (log) => log.address?.toLowerCase() === SATODROPS_CONTRACT.toLowerCase() && (log.topics?.length ?? 0) >= 2
+      );
+      const dropId = contractLog?.topics?.[1] ? BigInt(contractLog.topics[1]).toString() : "";
+
+      if (!dropId) {
+        throw new Error("Drop was funded, but the new drop ID could not be read from the transaction receipt.");
+      }
+
+      window.location.assign(`/claim?id=${dropId}`);
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : "Drop creation failed.");
     } finally {
