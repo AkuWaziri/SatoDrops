@@ -257,25 +257,25 @@ export default function Home() {
       try {
         if (!SATODROPS_CONTRACT) return;
         const deploymentRaw = await readTempoRpc("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
-        const deploymentReceipt = deploymentRaw as { blockNumber?: string };
+        const deploymentReceipt = deploymentRaw as unknown as { blockNumber?: string };
         if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
         const latestRaw = await readTempoRpc("eth_blockNumber", []);
-        const deploymentBlock = BigInt(deploymentReceipt.blockNumber);
-        const latestBlock = BigInt(latestRaw);
+        const deploymentBlock = BigInt(deploymentReceipt.blockNumber as string);
+        const latestBlock = BigInt(latestRaw as string);
         const maxRange = 100000n;
         const fromBlock = latestBlock > maxRange ? latestBlock - maxRange + 1n : deploymentBlock;
         const effectiveFrom = fromBlock > deploymentBlock ? fromBlock : deploymentBlock;
         const raw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CREATED_TOPIC] }]);
-        const logs = raw as Array<{ topics?: string[]; transactionHash?: string }>;
+        const logs = raw as unknown as Array<{ topics?: string[]; transactionHash?: string }>;
         const ids = logs.map((log) => log.topics?.[1] ? BigInt(log.topics[1]).toString() : "").filter(Boolean).slice(-10).reverse();
         const claimRaw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CLAIMED_TOPIC] }]);
-        const claimLogs = claimRaw as Array<{ topics?: string[]; transactionHash?: string }>;
+        const claimLogs = claimRaw as unknown as Array<{ topics?: string[]; transactionHash?: string }>;
         const loaded = [];
         for (const id of ids) {
           const creationLog = logs.find((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id);
           const claimTxs = claimLogs.filter((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id && log.transactionHash).map((log) => log.transactionHash as string);
           const data = await readTempoRpc("eth_call", [{ to: SATODROPS_CONTRACT, data: encodeFunctionData({ abi: [{ type:"function", name:"drops", stateMutability:"view", inputs:[{name:"dropId",type:"uint256"}], outputs:[{name:"creator",type:"address"},{name:"token",type:"address"},{name:"amountPerClaim",type:"uint128"},{name:"maxClaims",type:"uint64"},{name:"claimed",type:"uint64"},{name:"expiresAt",type:"uint64"},{name:"closed",type:"bool"},{name:"message",type:"string"}] }] as const, functionName:"drops", args:[BigInt(id)] }) }, "latest"]);
-          const hex = data.replace(/^0x/, "");
+          const hex = String(data).replace(/^0x/, "");
           const word = (i:number) => hex.slice(i*64,(i+1)*64);
           const tokenAddress = "0x" + word(1).slice(24);
           const tokenInfo = tokens.find((t) => t.address.toLowerCase() === tokenAddress.toLowerCase());
