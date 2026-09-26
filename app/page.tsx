@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Sparkles, Wallet } from "lucide-react";
-import { encodeFunctionData, keccak256, parseUnits, toBytes } from "viem";
+import { encodeFunctionData, formatUnits, keccak256, parseUnits, toBytes } from "viem";
 import { useEffect, useMemo, useState } from "react";
 
 type Eip1193Provider = NonNullable<Window["ethereum"]> & {
