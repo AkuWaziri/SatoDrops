@@ -133,7 +133,7 @@ export default function Home() {
 
       if (!provider) {
         if (!WALLETCONNECT_PROJECT_ID) {
-          setWalletError("Mobile wallet connection is not configured yet. Add a WalletConnect project ID.");
+          setWalletError("Mobile wallet connection is not configured yet. Add a WalletConnect Network project ID from the free WalletConnect Dashboard.");
           return;
         }
 
