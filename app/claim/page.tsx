@@ -53,6 +53,13 @@ const abi = [
   },
   {
     type: "function",
+    name: "isAllowedClaimant",
+    stateMutability: "view",
+    inputs: [{ name: "dropId", type: "uint256" }, { name: "wallet", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
     name: "claim",
     stateMutability: "nonpayable",
     inputs: [{ name: "dropId", type: "uint256" }],
@@ -145,6 +152,7 @@ export default function ClaimPage() {
   const [dropId, setDropId] = useState("");
   const [drop, setDrop] = useState<ReturnType<typeof decodeDropResult> | null>(null);
   const [alreadyClaimed, setAlreadyClaimed] = useState(false);
+  const [walletAllowed, setWalletAllowed] = useState(true);
   const [loading, setLoading] = useState(true);
   const [claiming, setClaiming] = useState(false);
   const [error, setError] = useState("");
@@ -224,6 +232,9 @@ export default function ClaimPage() {
       const data = encodeFunctionData({ abi, functionName: "hasClaimed", args: [BigInt(dropId), current as `0x${string}`] });
       const raw = await rpc<string>("eth_call", [{ to: SATODROPS_CONTRACT, data }, "latest"]);
       setAlreadyClaimed(BigInt(raw) !== 0n);
+      const allowedData = encodeFunctionData({ abi, functionName: "isAllowedClaimant", args: [BigInt(dropId), current as `0x${string}`] });
+      const allowedRaw = await rpc<string>("eth_call", [{ to: SATODROPS_CONTRACT, data: allowedData }, "latest"]);
+      setWalletAllowed(BigInt(allowedRaw) !== 0n);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Wallet connection failed.");
     }
@@ -238,6 +249,7 @@ export default function ClaimPage() {
     if (drop.closed) return setError("This drop is closed.");
     if (drop.claimed >= drop.maxClaims) return setError("This drop is sold out.");
     if (alreadyClaimed) return setError("This wallet has already claimed this drop.");
+    if (!walletAllowed) return setError("This wallet is not on the approved list for this drop.");
     try {
       setClaiming(true);
       const data = encodeFunctionData({ abi, functionName: "claim", args: [BigInt(dropId)] });
@@ -286,6 +298,7 @@ export default function ClaimPage() {
               {drop.closed && <div className="wallet-error">This drop has been closed.</div>}
               {drop.claimed >= drop.maxClaims && <div className="wallet-error">This drop is sold out.</div>}
               {alreadyClaimed && <div className="wallet-error">This wallet has already claimed this drop.</div>}
+              {account && !walletAllowed && <div className="wallet-error">This wallet is not on the approved list for this drop.</div>}
               {successHash && <div className="success-box">Claim confirmed on Tempo · <a href={explorerLink} target="_blank" rel="noreferrer">View transaction</a></div>}
               <button className="create-btn" onClick={unavailable || alreadyClaimed ? undefined : claim} disabled={claiming || unavailable || alreadyClaimed}>
                 <Wallet size={17}/>{claiming ? "Waiting for wallet…" : account ? `Claim ${formatUnits(drop.amountPerClaim, token?.decimals ?? 6)} ${token?.symbol ?? ""}` : "Connect wallet to claim"}
