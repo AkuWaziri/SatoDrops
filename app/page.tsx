@@ -61,7 +61,7 @@ const satodropsAbi = [
 
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
-const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
+const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256,bool,uint256)"));
 const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
 const DEPLOYMENT_TX = process.env.NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX ?? "";
 
@@ -181,7 +181,7 @@ export default function Home() {
       return;
     }
 
-    const claimCount = Number(claims);
+    const claimCount = effectiveClaims;
     if (!amount || Number(amount) <= 0) {
       setWalletError("Enter a reward amount greater than zero.");
       return;
