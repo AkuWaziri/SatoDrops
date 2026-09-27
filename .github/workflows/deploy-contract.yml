@@ -55,12 +55,15 @@ jobs:
           echo "$OUTPUT"
 
           ADDRESS="$(printf '%s\n' "$OUTPUT" | sed -n 's/^Deployed to: //p' | tail -n 1)"
+          TX_HASH="$(printf '%s\n' "$OUTPUT" | sed -n 's/^Transaction hash: //p' | tail -n 1)"
           test -n "$ADDRESS"
+          test -n "$TX_HASH"
 
           echo "SATODROPS_CONTRACT_ADDRESS=$ADDRESS" >> "$GITHUB_STEP_SUMMARY"
           echo "NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS=$ADDRESS" >> "$GITHUB_STEP_SUMMARY"
+          echo "NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX=$TX_HASH" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Deployment reminder
         run: |
           echo "Deployment complete."
-          echo "Set NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS to the deployed address in the frontend hosting environment."
+          echo "Set NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS and NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX to the values above in the frontend hosting environment."
