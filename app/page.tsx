@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Sparkles, Wallet } from "lucide-react";
-import { encodeFunctionData, formatUnits, http, keccak256, parseUnits, toBytes } from "viem";
+import { decodeFunctionResult, encodeFunctionData, formatUnits, http, keccak256, parseUnits, toBytes } from "viem";
 import { useEffect, useMemo, useState } from "react";
 import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
 import { defineChain } from "@reown/appkit/networks";
@@ -77,6 +77,16 @@ const tokens = [
   { symbol: "BetaUSD", address: "0x20c0000000000000000000000000000000000002", decimals: 6 },
   { symbol: "ThetaUSD", address: "0x20c0000000000000000000000000000000000003", decimals: 6 },
 ];
+
+const tokenMetadataAbi = [
+  {
+    type: "function",
+    name: "logoURI",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "string" }],
+  },
+] as const;
 
 const erc20Abi = [
   {
@@ -158,6 +168,7 @@ export default function Home() {
   const [created, setCreated] = useState(false);
   const [account, setAccount] = useState("");
   const [balances, setBalances] = useState<Record<string, number>>({});
+  const [tokenLogos, setTokenLogos] = useState<Record<string, string>>({});
   const [walletError, setWalletError] = useState("");
   const [creating, setCreating] = useState(false);
   const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[] }>>([]);
@@ -172,6 +183,26 @@ export default function Home() {
   const total = rewardTotal.toFixed(2);
   const totalFunding = (rewardTotal + creationFee + claimFees).toFixed(2);
   const selectedToken = useMemo(() => tokens.find((t) => t.symbol === token) ?? tokens[0], [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadTokenLogos = async () => {
+      const entries = await Promise.all(tokens.map(async (item) => {
+        try {
+          const data = encodeFunctionData({ abi: tokenMetadataAbi, functionName: "logoURI" });
+          const raw = await readTempoRpc("eth_call", [{ to: item.address, data }, "latest"]);
+          if (typeof raw !== "string" || !raw) return [item.symbol, ""] as const;
+          const logo = decodeFunctionResult({ abi: tokenMetadataAbi, functionName: "logoURI", data: raw as `0x${string}` });
+          return [item.symbol, logo] as const;
+        } catch {
+          return [item.symbol, ""] as const;
+        }
+      }));
+      if (!cancelled) setTokenLogos(Object.fromEntries(entries));
+    };
+    void loadTokenLogos();
+    return () => { cancelled = true; };
+  }, []);
 
   const { open } = useAppKit();
   const { address: appKitAddress, isConnected: appKitConnected } = useAppKitAccount();
@@ -430,7 +461,10 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
             {claimMode === "wallet" && <div className="input-wrap" style={{marginBottom:18}}><textarea value={walletsText} onChange={e=>setWalletsText(e.target.value)} placeholder="0x1234…&#10;0xabcd…" style={{minHeight:110}}/><span>{walletCount}/100</span></div>}
             <div className="summary-note" style={{marginBottom:18}}>{claimMode==="public" ? "Anyone can claim until the drop is full. The first eligible wallets to claim receive the rewards." : "Only the wallets listed here can claim. Each listed wallet can claim once."}</div>
             <label>Reward token</label>
-            <div className="token-row">{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>{t.symbol==="USDC"?"◉":t.symbol==="USDT0"?"₮":"◇"} {t.symbol}</button>)}</div>
+            <div className="token-row">{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>
+  {tokenLogos[t.symbol] ? <img src={tokenLogos[t.symbol]} alt="" width={18} height={18} style={{borderRadius:"50%",objectFit:"contain",verticalAlign:"middle"}} /> : <span aria-hidden="true">{t.symbol==="USDC"?"◉":t.symbol==="USDT0"?"₮":"◇"}</span>}
+  {" "}{t.symbol}
+</button>)}</div>
             {account && <div className="balance-row"><span>Connected balance</span><b>{(balances[selectedToken.symbol] ?? 0).toFixed(2)} {selectedToken.symbol}</b></div>}
             <div className="two-col">
               <div><label>Reward per person</label><div className="input-wrap"><input value={amount} onChange={e=>setAmount(e.target.value)} inputMode="decimal"/><span>{token}</span></div></div>
