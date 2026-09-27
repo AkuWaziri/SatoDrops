@@ -10,6 +10,9 @@ type Eip1193Provider = NonNullable<Window["ethereum"]> & {
 };
 
 const TEMPO_CHAIN_ID = "0x1079";
+const TEMPO_CHAIN_ID_DECIMAL = 4217;
+const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
+let activeWalletProvider: Eip1193Provider | undefined;
 const TEMPO_CHAIN = {
   chainId: TEMPO_CHAIN_ID,
   chainName: "Tempo Mainnet",
@@ -125,24 +128,49 @@ export default function Home() {
 
   async function connectWallet() {
     setWalletError("");
-    if (!window.ethereum) {
-      setWalletError("No EVM wallet detected. Install a wallet extension first.");
-      return;
-    }
-
     try {
-      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" }) as string[];
+      let provider = window.ethereum as Eip1193Provider | undefined;
+
+      if (!provider) {
+        if (!WALLETCONNECT_PROJECT_ID) {
+          setWalletError("Mobile wallet connection is not configured yet. Add a WalletConnect project ID.");
+          return;
+        }
+
+        const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+        const walletConnectProvider = await EthereumProvider.init({
+          projectId: WALLETCONNECT_PROJECT_ID,
+          optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
+          rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
+          showQrModal: true,
+          metadata: {
+            name: "SatoDrops",
+            description: "Stablecoin rewards on Tempo",
+            url: window.location.origin,
+            icons: [],
+          },
+        });
+        provider = walletConnectProvider as unknown as Eip1193Provider;
+        activeWalletProvider = provider;
+        if (!walletConnectProvider.session) {
+          await walletConnectProvider.connect();
+        }
+      } else {
+        activeWalletProvider = provider;
+      }
+
+      const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
       const current = accounts?.[0];
       if (!current) return;
 
-      const chainId = await window.ethereum.request({ method: "eth_chainId" }) as string;
+      const chainId = await provider.request({ method: "eth_chainId" }) as string;
       if (chainId.toLowerCase() !== TEMPO_CHAIN_ID) {
         try {
-          await window.ethereum.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TEMPO_CHAIN_ID }] });
+          await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TEMPO_CHAIN_ID }] });
         } catch (switchError) {
           const code = (switchError as { code?: number })?.code;
           if (code === 4902) {
-            await window.ethereum.request({ method: "wallet_addEthereumChain", params: [TEMPO_CHAIN] });
+            await provider.request({ method: "wallet_addEthereumChain", params: [TEMPO_CHAIN] });
           } else {
             throw switchError;
           }
@@ -153,7 +181,7 @@ export default function Home() {
       const nextBalances: Record<string, number> = {};
       for (const item of tokens) {
         try {
-          nextBalances[item.symbol] = await readTokenBalance(window.ethereum, item.address, current);
+          nextBalances[item.symbol] = await readTokenBalance(provider, item.address, current);
         } catch {
           nextBalances[item.symbol] = 0;
         }
@@ -168,8 +196,9 @@ export default function Home() {
     setWalletError("");
     setCreated(false);
 
-    if (!window.ethereum) {
-      setWalletError("No EVM wallet detected.");
+    const provider = activeWalletProvider ?? (window.ethereum as Eip1193Provider | undefined);
+    if (!provider) {
+      setWalletError("Connect a wallet first.");
       return;
     }
     if (!account) {
@@ -221,7 +250,7 @@ export default function Home() {
         args: [SATODROPS_CONTRACT as `0x${string}`, totalFundingRaw],
       });
 
-      const approvalHash = await window.ethereum.request({
+      const approvalHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
           from: account,
@@ -231,7 +260,7 @@ export default function Home() {
         }],
       }) as string;
 
-      await waitForReceipt(window.ethereum, approvalHash);
+      await waitForReceipt(provider, approvalHash);
 
       const createData = encodeFunctionData({
         abi: satodropsAbi,
@@ -247,7 +276,7 @@ export default function Home() {
         ],
       });
 
-      const createHash = await window.ethereum.request({
+      const createHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
           from: account,
@@ -257,7 +286,7 @@ export default function Home() {
         }],
       }) as string;
 
-      const createReceipt = await waitForReceipt(window.ethereum, createHash);
+      const createReceipt = await waitForReceipt(provider, createHash);
 
       const logs = (createReceipt as { logs?: Array<{ address?: string; topics?: string[] }> }).logs ?? [];
       const contractLog = logs.find(
@@ -319,7 +348,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
   }, [account]);
 
   useEffect(() => {
-    const provider = window.ethereum as Eip1193Provider | undefined;
+    const provider = activeWalletProvider ?? (window.ethereum as Eip1193Provider | undefined);
     if (!provider?.on) return;
     const handleAccounts = (...args: unknown[]) => {
       const next = args[0] as string[] | undefined;
