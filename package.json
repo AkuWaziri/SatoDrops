@@ -15,8 +15,8 @@
     "lucide-react": "latest",
     "viem": "2.56.8",
     "@reown/appkit": "^1.8.24",
-    "@reown/appkit-adapter-ethers": "^1.8.24",
-    "ethers": "^6.15.0"
+    "@reown/appkit-adapter-wagmi": "^1.8.24",
+    "wagmi": "^2.19.5"
   },
   "devDependencies": {
     "typescript": "latest",
