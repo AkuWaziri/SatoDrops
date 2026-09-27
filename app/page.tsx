@@ -5,7 +5,7 @@ import { encodeFunctionData, formatUnits, keccak256, parseUnits, toBytes } from 
 import { useEffect, useMemo, useState } from "react";
 import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
 import { defineChain } from "@reown/appkit/networks";
-import { EthersAdapter } from "@reown/appkit-adapter-ethers";
+import { WagmiAdapter } from "@reown/appkit-adapter-wagmi";
 
 type Eip1193Provider = NonNullable<Window["ethereum"]> & {
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -31,9 +31,14 @@ const TEMPO_NETWORK = defineChain({
   },
 });
 
-if (WALLETCONNECT_PROJECT_ID) {
+const wagmiAdapter = WALLETCONNECT_PROJECT_ID ? new WagmiAdapter({
+  networks: [TEMPO_NETWORK],
+  projectId: WALLETCONNECT_PROJECT_ID,
+}) : undefined;
+
+if (WALLETCONNECT_PROJECT_ID && wagmiAdapter) {
   createAppKit({
-    adapters: [new EthersAdapter()],
+    adapters: [wagmiAdapter],
     networks: [TEMPO_NETWORK],
     projectId: WALLETCONNECT_PROJECT_ID,
     metadata: {
