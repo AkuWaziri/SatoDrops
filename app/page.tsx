@@ -128,40 +128,60 @@ export default function Home() {
 
   async function connectWallet() {
     setWalletError("");
+
+    const createWalletConnectProvider = async () => {
+      if (!WALLETCONNECT_PROJECT_ID) {
+        throw new Error("Mobile wallet connection is not configured. Add the WalletConnect Network project ID in Vercel.");
+      }
+
+      const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+      const walletConnectProvider = await EthereumProvider.init({
+        projectId: WALLETCONNECT_PROJECT_ID,
+        optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
+        rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
+        showQrModal: true,
+        metadata: {
+          name: "SatoDrops",
+          description: "Stablecoin rewards on Tempo",
+          url: window.location.origin,
+          icons: [],
+        },
+      });
+
+      if (!walletConnectProvider.session) {
+        await walletConnectProvider.connect();
+      }
+
+      return walletConnectProvider as unknown as Eip1193Provider;
+    };
+
     try {
-      let provider = window.ethereum as Eip1193Provider | undefined;
+      let provider = activeWalletProvider;
 
       if (!provider) {
-        if (!WALLETCONNECT_PROJECT_ID) {
-          setWalletError("Mobile wallet connection is not configured yet. Add a WalletConnect Network project ID from the free WalletConnect Dashboard.");
-          return;
+        const injected = window.ethereum as Eip1193Provider | undefined;
+
+        if (injected) {
+          try {
+            const accounts = await injected.request({ method: "eth_requestAccounts" }) as string[];
+            if (accounts?.[0]) {
+              provider = injected;
+            }
+          } catch {
+            provider = undefined;
+          }
         }
 
-        const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
-        const walletConnectProvider = await EthereumProvider.init({
-          projectId: WALLETCONNECT_PROJECT_ID,
-          optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
-          rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-          showQrModal: true,
-          metadata: {
-            name: "SatoDrops",
-            description: "Stablecoin rewards on Tempo",
-            url: window.location.origin,
-            icons: [],
-          },
-        });
-        provider = walletConnectProvider as unknown as Eip1193Provider;
-        activeWalletProvider = provider;
-        if (!walletConnectProvider.session) {
-          await walletConnectProvider.connect();
+        if (!provider) {
+          provider = await createWalletConnectProvider();
         }
-      } else {
+
         activeWalletProvider = provider;
       }
 
       const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
       const current = accounts?.[0];
-      if (!current) return;
+      if (!current) throw new Error("No wallet account was returned. Choose a wallet and approve the connection.");
 
       const chainId = await provider.request({ method: "eth_chainId" }) as string;
       if (chainId.toLowerCase() !== TEMPO_CHAIN_ID) {
