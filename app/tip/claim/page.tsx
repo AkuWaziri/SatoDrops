@@ -179,7 +179,6 @@ export default function TipClaimPage() {
         const result=await response.json() as {signature?:string;error?:string};
         if(!response.ok||!result.signature)throw new Error(result.error??"Identity authorization failed.");
         signature=result.signature;
-      }
 
       const data=encodeFunctionData({abi:claimAbi,functionName:"claimTip",args:[BigInt(id),signature as `0x${string}`]});
       const hash=await window.ethereum.request({method:"eth_sendTransaction",params:[{from:wallet,to:CONTRACT,data,feeToken:FEE_TOKEN}]}) as string;
