@@ -419,7 +419,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
         <div className="hero-copy">
           <div className="eyebrow"><span className="live-dot"/> POWERED BY TEMPO</div>
           <h1>Tiny rewards.<br/><span>Instantly claimable.</span></h1>
-          <p className="hero-text">Fund a small stablecoin reward, share one link, and let people claim it onchain.</p>
+          <p className="hero-text">Fund a stablecoins reward, share one link, and let people claim it onchain.</p>
           <div className="hero-actions"><a className="primary" href="#create">Create a drop <ArrowUpRight size={17}/></a><a className="secondary" href="#how">See how it works</a></div>
           <div className="trust-row"><span>Stablecoin-native</span><i/> <span>Tempo mainnet</span><i/> <span>Non-custodial</span></div>
         </div>
@@ -480,7 +480,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
       <section id="how" className="how"><div className="eyebrow">THE LOOP</div><h2>Create. Fund. Share. Claim.</h2><div className="steps">{[["01","Create","Choose a stablecoin, amount and purpose."],["02","Fund","Approve the total reward on Tempo."],["03","Share","Send the claim link anywhere."],["04","Claim","A recipient connects and gets paid."]].map(([n,t,d])=><div className="step" key={n}><span>{n}</span><h3>{t}</h3><p>{d}</p></div>)}</div></section>
 
-      <footer><div className="brand"><span className="brand-mark">S</span><span>SatoDrops</span></div><span>Tiny programmable rewards, powered by Tempo.</span><a href="https://tempo.xyz" target="_blank" rel="noreferrer">Built for Tempo <ArrowUpRight size={14}/></a></footer>
+      <footer><div className="brand"><span className="brand-mark">S</span><span>SatoDrops</span></div><span>Stablecoins programmable rewards, powered by Tempo.</span><a href="https://tempo.xyz" target="_blank" rel="noreferrer">Built for Tempo <ArrowUpRight size={14}/></a></footer>
     </main>
   );
 }
