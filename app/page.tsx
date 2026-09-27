@@ -453,7 +453,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
 
       <section id="create" className="builder-section">
-        <div className="section-heading"><div><div className="eyebrow">CREATE A DROP</div><h2>Turn a little value into an action.</h2></div><span className="step-count">01 / 02</span></div>
+        <div className="section-heading"><div><div className="eyebrow">CREATE A DROP</div><h2>Fund It. Share It.</h2></div><span className="step-count">01 / 02</span></div>
         <div className="builder">
           <div className="form-card">
             <label>Who can claim?</label>
