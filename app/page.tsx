@@ -47,9 +47,15 @@ if (WALLETCONNECT_PROJECT_ID && wagmiAdapter) {
       url: "https://satodrops.xyz",
       icons: [],
     },
+    enableWalletConnect: true,
+    enableEIP6963: true,
+    enableInjected: true,
+    allWallets: "SHOW",
     features: {
       analytics: false,
       swaps: false,
+      email: false,
+      socials: false,
     },
   });
 }
