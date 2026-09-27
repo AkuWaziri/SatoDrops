@@ -202,8 +202,9 @@ export default function Home() {
 
       if (!provider) {
         // On normal mobile browsers there is usually no injected EVM provider.
-        // Go directly to WalletConnect so the wallet picker/deep-link opens.
+        // Show immediate feedback while WalletConnect prepares the session.
         if (isMobileBrowser) {
+          setWalletConnectOpening(true);
           provider = await createWalletConnectProvider();
         } else {
           const injected = await findInjectedWallet();
