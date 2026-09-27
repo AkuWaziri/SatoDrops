@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "crypto";
 
+// SatoTips deployment marker: configuration is read at runtime for each deployment.
 export async function GET(request: Request) {
   const clientId = process.env.X_CLIENT_ID;
   const redirectUri = process.env.X_REDIRECT_URI;
