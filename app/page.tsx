@@ -431,7 +431,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
         <div className="hero-copy">
           <div className="eyebrow"><span className="live-dot"/> POWERED BY TEMPO</div>
           <h1>Stablecoins rewards.<br/><span>Instantly claimable..</span></h1>
-          <p className="hero-text">Fund a stablecoin reward, share one link, and let people claim it on fcfs or wallet specific onchain.</p>
+          <p className="hero-text">Fund a stablecoin reward, share one link, and let people claim it on fcfs or wallet specific, all onchain.</p>
           <div className="hero-actions"><a className="primary" href="#create">Create a drop <ArrowUpRight size={17}/></a><a className="secondary" href="#how">See how it works</a></div>
           <div className="trust-row"><span>Stablecoin-native</span><i/> <span>Tempo mainnet</span><i/> <span>Non-custodial</span></div>
         </div>
