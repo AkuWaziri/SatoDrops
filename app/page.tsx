@@ -471,19 +471,16 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
               </div>
               <button className="wallet-picker-close" onClick={closeWalletPicker} aria-label="Close">×</button>
             </div>
-            {!walletConnectUri ? (
-              <div className="wallet-picker-loading">Preparing secure WalletConnect session…</div>
-            ) : (
-              <div className="wallet-picker-grid">
-                {[["metamask","MetaMask"],["trust","Trust Wallet"],["coinbase","Coinbase Wallet"],["rainbow","Rainbow"],["okx","OKX Wallet"]].map(([id,name]) => (
-                  <button key={id} className="wallet-picker-option" onClick={() => openWalletConnectWallet(id)}>
-                    <span className="wallet-picker-icon">{name.slice(0,1)}</span>
-                    <span>{name}</span>
-                    <ArrowUpRight size={15}/>
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="wallet-picker-grid">
+              {[["metamask","MetaMask"],["trust","Trust Wallet"],["coinbase","Coinbase Wallet"],["rainbow","Rainbow"],["okx","OKX Wallet"]].map(([id,name]) => (
+                <button key={id} className="wallet-picker-option" onClick={() => openWalletConnectWallet(id)} disabled={!walletConnectUri}>
+                  <span className="wallet-picker-icon">{name.slice(0,1)}</span>
+                  <span>{name}</span>
+                  <ArrowUpRight size={15}/>
+                </button>
+              ))}
+            </div>
+            {!walletConnectUri && <div className="wallet-picker-loading">Preparing secure WalletConnect session…</div>}
             <p className="wallet-picker-note">The wallet app must be installed on this phone. After approval, return to SatoDrops.</p>
           </div>
         </div>
