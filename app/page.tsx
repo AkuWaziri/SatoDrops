@@ -379,11 +379,6 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
 
 
-            <p className="wallet-picker-note">After approving in the wallet, return to SatoDrops. The page will finish the connection automatically.</p>
-          </div>
-        </div>
-      )}
-
       <section className="hero">
         <div className="hero-copy">
           <div className="eyebrow"><span className="live-dot"/> POWERED BY TEMPO</div>
