@@ -167,6 +167,8 @@ export default function Home() {
         showQrModal: true,
         qrModalOptions: {
           enableMobileFullScreen: true,
+          mobileLinks: ["metamask", "trust", "coinbase", "rainbow", "phantom"],
+          desktopLinks: ["metamask", "rainbow", "coinbase", "trust"],
         },
         metadata: {
           name: "SatoDrops",
