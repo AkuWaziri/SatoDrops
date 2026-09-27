@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, ArrowUpRight, Check, Wallet } from "lucide-react";
-import { decodeAbiParameters, encodeFunctionData, encodePacked, keccak256, parseAbiParameters } from "viem";
+import { encodeFunctionData, encodePacked, keccak256 } from "viem";
 import { useEffect, useRef, useState } from "react";
 
 declare global {
@@ -53,22 +53,32 @@ async function waitReceipt(provider:NonNullable<Window["ethereum"]>,hash:string)
 }
 
 function decode(raw:string) {
-  const values=decodeAbiParameters(
-    parseAbiParameters("address,address,uint128,uint64,bool,bool,uint8,bytes32"),
-    raw as `0x${string}`
-  );
-  const [creator,tokenAddress,amount,expiresAt,claimed,closed,identityType,identityHash]=values;
-  const token=tokens.find(t=>t.address.toLowerCase()===tokenAddress.toLowerCase());
+  const hex=raw.replace(/^0x/,"");
+  const word=(i:number)=>hex.slice(i*64,(i+1)*64);
+  const addressFromWord=(i:number)=>"0x"+word(i).slice(24);
+  let tokenAddress=addressFromWord(1).toLowerCase();
+  let token=tokens.find(t=>t.address.toLowerCase()===tokenAddress);
+
+  // Solidity omits the dynamic string from a public struct getter. Keep a
+  // fallback scan so the claim page remains compatible with either ABI layout.
+  if(!token){
+    for(let i=0;i*64+64<=hex.length;i++){
+      const candidate=addressFromWord(i).toLowerCase();
+      const match=tokens.find(t=>t.address.toLowerCase()===candidate);
+      if(match){ token=match; tokenAddress=candidate; break; }
+    }
+  }
   if(!token) throw new Error("This tip uses an unsupported token.");
+
   return {
-    creator,
+    creator:addressFromWord(0),
     token,
-    amount,
-    expiresAt,
-    claimed,
-    closed,
-    identityType,
-    identityHash,
+    amount:BigInt("0x"+word(2)),
+    expiresAt:BigInt("0x"+word(3)),
+    claimed:BigInt("0x"+word(4))!==0n,
+    closed:BigInt("0x"+word(5))!==0n,
+    identityType:Number(BigInt("0x"+word(6))),
+    identityHash:("0x"+word(7)) as `0x${string}`,
     message:""
   };
 }
