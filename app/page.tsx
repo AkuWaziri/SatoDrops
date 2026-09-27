@@ -13,6 +13,7 @@ const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_CHAIN_ID_DECIMAL = 4217;
 const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 let activeWalletProvider: Eip1193Provider | undefined;
+let pendingMobileWalletConnect: Promise<Eip1193Provider> | null = null;
 const TEMPO_CHAIN = {
   chainId: TEMPO_CHAIN_ID,
   chainName: "Tempo Mainnet",
@@ -128,139 +129,215 @@ export default function Home() {
   const totalFunding = (rewardTotal + creationFee + claimFees).toFixed(2);
   const selectedToken = useMemo(() => tokens.find((t) => t.symbol === token) ?? tokens[0], [token]);
 
+  async function loadWalletBalances(provider: Eip1193Provider, wallet: string) {
+    const nextBalances: Record<string, number> = {};
+    for (const item of tokens) {
+      try {
+        nextBalances[item.symbol] = await readTokenBalance(provider, item.address, wallet);
+      } catch {
+        nextBalances[item.symbol] = 0;
+      }
+    }
+    setBalances(nextBalances);
+  }
+
+  async function finishWalletConnection(provider: Eip1193Provider) {
+    let accounts = await provider.request({ method: "eth_accounts" }) as string[];
+    if (!accounts?.[0]) {
+      accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
+    }
+
+    const current = accounts?.[0] ?? "";
+    if (!current) throw new Error("No wallet account was returned. Approve the connection in your wallet.");
+
+    const chainId = await provider.request({ method: "eth_chainId" }) as string;
+    if (chainId.toLowerCase() !== TEMPO_CHAIN_ID) {
+      try {
+        await provider.request({
+          method: "wallet_switchEthereumChain",
+          params: [{ chainId: TEMPO_CHAIN_ID }],
+        });
+      } catch (switchError) {
+        const code = (switchError as { code?: number })?.code;
+        if (code === 4902 || code === -32602) {
+          await provider.request({ method: "wallet_addEthereumChain", params: [TEMPO_CHAIN] });
+        } else {
+          throw switchError;
+        }
+      }
+    }
+
+    setAccount(current);
+    await loadWalletBalances(provider, current);
+    setWalletConnectUri("");
+    setWalletConnectOpening(false);
+    return current;
+  }
+
+  async function findInjectedWallet() {
+    const discovered: Eip1193Provider[] = [];
+    const onProvider = (event: Event) => {
+      const detail = (event as CustomEvent).detail as { provider?: Eip1193Provider } | undefined;
+      if (detail?.provider && !discovered.includes(detail.provider)) discovered.push(detail.provider);
+    };
+
+    window.addEventListener("eip6963:announceProvider", onProvider);
+    window.dispatchEvent(new Event("eip6963:requestProvider"));
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    window.removeEventListener("eip6963:announceProvider", onProvider);
+
+    const legacy = window.ethereum as Eip1193Provider | undefined;
+    if (legacy && !discovered.includes(legacy)) discovered.unshift(legacy);
+
+    for (const candidate of discovered) {
+      try {
+        const accounts = await candidate.request({ method: "eth_accounts" }) as string[];
+        if (accounts?.[0]) return { provider: candidate, account: accounts[0] };
+      } catch {
+        // Ignore wallets that cannot answer discovery requests.
+      }
+    }
+
+    return undefined;
+  }
+
+  async function startMobileWalletConnect() {
+    if (activeWalletProvider) return activeWalletProvider;
+    if (pendingMobileWalletConnect) return pendingMobileWalletConnect;
+
+    if (!WALLETCONNECT_PROJECT_ID) {
+      throw new Error("Wallet connection is not configured.");
+    }
+
+    const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+    const walletConnectProvider = await EthereumProvider.init({
+      projectId: WALLETCONNECT_PROJECT_ID,
+      optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
+      rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
+      showQrModal: false,
+      metadata: {
+        name: "SatoDrops",
+        description: "Stablecoin rewards on Tempo",
+        url: window.location.origin,
+        icons: [],
+      },
+    });
+
+    const provider = walletConnectProvider as unknown as Eip1193Provider;
+    activeWalletProvider = provider;
+
+    if (walletConnectProvider.session) {
+      return provider;
+    }
+
+    walletConnectProvider.on("display_uri", (uri: string) => {
+      setWalletConnectUri(uri);
+      setWalletConnectOpening(true);
+    });
+
+    walletConnectProvider.on("accountsChanged", (...args: unknown[]) => {
+      const next = args[0] as string[] | undefined;
+      if (next?.[0]) {
+        setAccount(next[0]);
+        void loadWalletBalances(provider, next[0]);
+      } else {
+        setAccount("");
+        setBalances({});
+      }
+    });
+
+    const connection = walletConnectProvider.connect({
+      chains: [TEMPO_CHAIN_ID_DECIMAL],
+      rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
+    }).then(async () => {
+      pendingMobileWalletConnect = null;
+      setWalletConnectOpening(false);
+      await finishWalletConnection(provider);
+      return provider;
+    }).catch((error) => {
+      pendingMobileWalletConnect = null;
+      activeWalletProvider = undefined;
+      setWalletConnectUri("");
+      setWalletConnectOpening(false);
+      throw error;
+    });
+
+    pendingMobileWalletConnect = connection;
+    return provider;
+  }
+
   async function connectWallet() {
     setWalletError("");
 
-    const findInjectedWallet = async () => {
-      const discovered: Eip1193Provider[] = [];
-      const onProvider = (event: Event) => {
-        const detail = (event as CustomEvent).detail as { provider?: Eip1193Provider } | undefined;
-        if (detail?.provider && !discovered.includes(detail.provider)) discovered.push(detail.provider);
-      };
-      window.addEventListener("eip6963:announceProvider", onProvider);
-      window.dispatchEvent(new Event("eip6963:requestProvider"));
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      window.removeEventListener("eip6963:announceProvider", onProvider);
-
-      const legacy = window.ethereum as Eip1193Provider | undefined;
-      if (legacy && !discovered.includes(legacy)) discovered.unshift(legacy);
-
-      for (const candidate of discovered) {
-        try {
-          const accounts = await candidate.request({ method: "eth_requestAccounts" }) as string[];
-          if (accounts?.[0]) return { provider: candidate, account: accounts[0] };
-        } catch {
-          // Try the next injected wallet or WalletConnect.
-        }
-      }
-      return undefined;
-    };
-
-    const createWalletConnectProvider = async () => {
-      if (!WALLETCONNECT_PROJECT_ID) {
-        throw new Error("WalletConnect could not start. Please refresh the page and try again.");
-      }
-
-      const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
-      const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-      const walletConnectProvider = await EthereumProvider.init({
-        projectId: WALLETCONNECT_PROJECT_ID,
-        optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
-        rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-        showQrModal: !mobile,
-        qrModalOptions: {
-          enableMobileFullScreen: true,
-        },
-        metadata: {
-          name: "SatoDrops",
-          description: "Stablecoin rewards on Tempo",
-          url: window.location.origin,
-          icons: [],
-        },
-      });
-
-      if (!walletConnectProvider.session) {
-        if (mobile) {
-          walletConnectProvider.on("display_uri", (uri: string) => {
-            setWalletConnectUri(uri);
-          });
-        }
-        await walletConnectProvider.connect({
-          chains: [TEMPO_CHAIN_ID_DECIMAL],
-          rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-        });
-      }
-
-      return walletConnectProvider as unknown as Eip1193Provider;
-    };
-
     try {
-      let provider = activeWalletProvider;
-      let current = "";
-
       const isMobileBrowser = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+      let provider = activeWalletProvider;
 
       if (!provider) {
-        // On normal mobile browsers there is usually no injected EVM provider.
-        // Show immediate feedback while WalletConnect prepares the session.
+        const injected = await findInjectedWallet();
+
+        if (injected) {
+          provider = injected.provider;
+          activeWalletProvider = provider;
+          await finishWalletConnection(provider);
+          return;
+        }
+
         if (isMobileBrowser) {
+          provider = await startMobileWalletConnect();
           setWalletConnectOpening(true);
-          provider = await createWalletConnectProvider();
-        } else {
-          const injected = await findInjectedWallet();
-          if (injected) {
-            provider = injected.provider;
-            current = injected.account;
-          } else {
-            provider = await createWalletConnectProvider();
+
+          if (walletConnectUri) {
+            return;
           }
+
+          return;
         }
+
+        const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+        if (!WALLETCONNECT_PROJECT_ID) throw new Error("Wallet connection is not configured.");
+
+        const walletConnectProvider = await EthereumProvider.init({
+          projectId: WALLETCONNECT_PROJECT_ID,
+          optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
+          rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
+          showQrModal: true,
+          qrModalOptions: { enableMobileFullScreen: true },
+          metadata: {
+            name: "SatoDrops",
+            description: "Stablecoin rewards on Tempo",
+            url: window.location.origin,
+            icons: [],
+          },
+        });
+
+        provider = walletConnectProvider as unknown as Eip1193Provider;
         activeWalletProvider = provider;
-      }
 
-      if (!current) {
-        const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
-        current = accounts?.[0] ?? "";
-      }
-
-      if (!current) {
-        throw new Error("No wallet account was returned. Open your wallet, approve the connection, and try again.");
-      }
-
-      const chainId = await provider.request({ method: "eth_chainId" }) as string;
-      if (chainId.toLowerCase() !== TEMPO_CHAIN_ID) {
-        try {
-          await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TEMPO_CHAIN_ID }] });
-        } catch (switchError) {
-          const code = (switchError as { code?: number })?.code;
-          if (code === 4902 || code === -32602) {
-            await provider.request({ method: "wallet_addEthereumChain", params: [TEMPO_CHAIN] });
-          } else {
-            throw switchError;
-          }
+        if (!walletConnectProvider.session) {
+          await walletConnectProvider.connect({
+            chains: [TEMPO_CHAIN_ID_DECIMAL],
+            rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
+          });
         }
-      }
 
-      setAccount(current);
-      const nextBalances: Record<string, number> = {};
-      for (const item of tokens) {
-        try {
-          nextBalances[item.symbol] = await readTokenBalance(provider, item.address, current);
-        } catch {
-          nextBalances[item.symbol] = 0;
-        }
+        await finishWalletConnection(provider);
       }
-      setBalances(nextBalances);
     } catch (error) {
       activeWalletProvider = undefined;
-      setWalletError(error instanceof Error ? error.message : "Wallet connection failed. Open your wallet app and approve the connection.");
-    } finally {
+      pendingMobileWalletConnect = null;
+      setWalletConnectUri("");
       setWalletConnectOpening(false);
+      setWalletError(error instanceof Error ? error.message : "Wallet connection failed.");
     }
   }
 
   function openWalletConnectWallet(kind: string) {
-    if (!walletConnectUri) return;
+    if (!walletConnectUri) {
+      setWalletError("Still preparing the wallet connection. Try again in a moment.");
+      return;
+    }
+
     const encoded = encodeURIComponent(walletConnectUri);
     const links: Record<string, string> = {
       metamask: `https://metamask.app.link/wc?uri=${encoded}`,
@@ -269,6 +346,7 @@ export default function Home() {
       rainbow: `https://rnbwapp.com/wc?uri=${encoded}`,
       okx: `https://www.okx.com/download?deeplink=${encodeURIComponent(`okx://wallet/wc?uri=${encoded}`)}`,
     };
+
     const target = links[kind];
     if (!target) return;
     window.location.href = target;
@@ -277,6 +355,7 @@ export default function Home() {
   function closeWalletPicker() {
     setWalletConnectUri("");
     setWalletConnectOpening(false);
+    pendingMobileWalletConnect = null;
     activeWalletProvider = undefined;
   }
 
@@ -436,19 +515,27 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
   }, [account]);
 
   useEffect(() => {
-    const provider = activeWalletProvider ?? (window.ethereum as Eip1193Provider | undefined);
-    if (!provider?.on) return;
-    const handleAccounts = (...args: unknown[]) => {
-      const next = args[0] as string[] | undefined;
-      if (next?.[0]) {
-        setAccount(next[0]);
-      } else {
-        setAccount("");
-        setBalances({});
-      }
+    const handleVisibility = () => {
+      if (document.visibilityState !== "visible" || !activeWalletProvider) return;
+
+      void (async () => {
+        try {
+          const accounts = await activeWalletProvider?.request({ method: "eth_accounts" }) as string[];
+          if (accounts?.[0]) {
+            await finishWalletConnection(activeWalletProvider as Eip1193Provider);
+          }
+        } catch {
+          // The wallet may still be processing the approval.
+        }
+      })();
     };
-    provider.on("accountsChanged", handleAccounts);
-    return () => provider.removeListener?.("accountsChanged", handleAccounts);
+
+    document.addEventListener("visibilitychange", handleVisibility);
+    window.addEventListener("focus", handleVisibility);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibility);
+      window.removeEventListener("focus", handleVisibility);
+    };
   }, []);
 
   return (
@@ -460,28 +547,35 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
       {walletError && <div className="wallet-error">{walletError}</div>}
 
-      {(walletConnectOpening || walletConnectUri) && (
+      {walletConnectOpening && (
         <div className="wallet-picker-backdrop">
           <div className="wallet-picker">
             <div className="wallet-picker-head">
               <div>
-                <div className="eyebrow">CONNECT WALLET</div>
-                <h3>Open your wallet</h3>
-                <p>Select the wallet app installed on your phone.</p>
+                <div className="eyebrow">MOBILE WALLET</div>
+                <h3>Choose your wallet</h3>
+                <p>Open an installed wallet app to approve the SatoDrops connection.</p>
               </div>
               <button className="wallet-picker-close" onClick={closeWalletPicker} aria-label="Close">×</button>
             </div>
-            <div className="wallet-picker-grid">
-              {[["metamask","MetaMask"],["trust","Trust Wallet"],["coinbase","Coinbase Wallet"],["rainbow","Rainbow"],["okx","OKX Wallet"]].map(([id,name]) => (
-                <button key={id} className="wallet-picker-option" onClick={() => openWalletConnectWallet(id)} disabled={!walletConnectUri}>
-                  <span className="wallet-picker-icon">{name.slice(0,1)}</span>
-                  <span>{name}</span>
-                  <ArrowUpRight size={15}/>
-                </button>
-              ))}
-            </div>
-            {!walletConnectUri && <div className="wallet-picker-loading">Preparing secure WalletConnect session…</div>}
-            <p className="wallet-picker-note">The wallet app must be installed on this phone. After approval, return to SatoDrops.</p>
+
+            {walletConnectUri ? (
+              <div className="wallet-picker-grid">
+                {[["metamask","MetaMask"],["trust","Trust Wallet"],["coinbase","Coinbase Wallet"],["rainbow","Rainbow"],["okx","OKX Wallet"]].map(([id,name]) => (
+                  <button key={id} className="wallet-picker-option" onClick={() => openWalletConnectWallet(id)}>
+                    <span className="wallet-picker-icon">{name.slice(0,1)}</span>
+                    <span>{name}</span>
+                    <ArrowUpRight size={15}/>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="wallet-picker-loading">
+                Preparing secure connection…
+              </div>
+            )}
+
+            <p className="wallet-picker-note">After approving in the wallet, return to SatoDrops. The page will finish the connection automatically.</p>
           </div>
         </div>
       )}
