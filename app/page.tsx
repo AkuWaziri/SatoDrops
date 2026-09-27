@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUpRight, Sparkles, Wallet } from "lucide-react";
+import { ArrowUpRight, Wallet } from "lucide-react";
 import { encodeFunctionData, formatUnits, http, keccak256, parseUnits, toBytes } from "viem";
 import { useEffect, useMemo, useState } from "react";
 import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
@@ -425,7 +425,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
             <label>Who can claim?</label>
             <div className="token-row">{[["public","Public · first come first serve"],["wallet","Specific wallets · up to 100"]].map(([value,label])=><button key={value} className={claimMode===value?"token active":"token"} onClick={()=>setClaimMode(value as "public"|"wallet")}>{label}</button>)}</div>
             {claimMode === "wallet" && <div className="input-wrap" style={{marginBottom:18}}><textarea value={walletsText} onChange={e=>setWalletsText(e.target.value)} placeholder="0x1234…&#10;0xabcd…" style={{minHeight:110}}/><span>{walletCount}/100</span></div>}
-            <div className="summary-note" style={{marginBottom:18}}>{claimMode==="public" ? "Anyone can claim until the drop is full. The first eligible wallets to claim receive the rewards." : "Only the wallets listed here can claim. Each listed wallet can claim once."}</div>
+            <div className="summary-note" style={{marginBottom:18}}>{claimMode==="public" ? "Anyone can claim until the drop is full." : "Only the wallets listed here can claim. Each listed wallet can claim once."}</div>
             <label>Reward token</label>
             <div className="token-row">{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>
   <img src={t.logo} alt="" width={20} height={20} style={{borderRadius:"50%",objectFit:"contain",verticalAlign:"middle"}} />
@@ -439,7 +439,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
             <label>What is this reward for?</label>
             <textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={120}/>
             <div className="char-count">{message.length}/120</div>
-            <button className="create-btn" onClick={createDrop} disabled={creating}><Sparkles size={17}/>{creating?"Waiting for wallet…":created?"Drop created":"Create drop"}</button>
+            <button className="create-btn" onClick={createDrop} disabled={creating}>{creating?"Waiting for wallet…":created?"Drop created":"Create drop"}</button>
           </div>
           <aside className="summary-card">
             <div className="summary-label">DROP SUMMARY</div>
