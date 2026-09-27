@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowLeft, ArrowUpRight, Check, Wallet } from "lucide-react";
-import { encodeFunctionData, encodePacked, keccak256 } from "viem";
+import { encodeFunctionData } from "viem";
 import { useEffect, useRef, useState } from "react";
 
 declare global {
@@ -172,11 +172,8 @@ export default function TipClaimPage() {
       if(tip.closed) throw new Error("This tip is closed.");
       if(tip.expiresAt!==0n && BigInt(Math.floor(Date.now()/1000))>=tip.expiresAt) throw new Error("This tip has expired.");
 
+      if(tip.identityType!==1 && tip.identityType!==2) throw new Error("This tip uses an unsupported identity type.");
       let signature="0x";
-      if(tip.identityType===3) {
-        const expected=keccak256(encodePacked(["address"],[wallet as `0x${string}`]));
-        if(expected.toLowerCase()!==tip.identityHash.toLowerCase()) throw new Error("This tip is restricted to a different wallet.");
-      } else {
         if(!verified) throw new Error("Verify the recipient identity first.");
         const response=await fetch("/api/tip/authorize",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({tipId:id,wallet})});
         const result=await response.json() as {signature?:string;error?:string};
@@ -196,7 +193,7 @@ export default function TipClaimPage() {
   if(loading)return <main className="claim-page"><section className="claim-shell"><div className="claim-card"><div className="eyebrow">SATODROPS · TIP</div><h1>Loading tip…</h1></div></section></main>;
   if(!tip)return <main className="claim-page"><section className="claim-shell"><div className="claim-card"><div className="eyebrow">SATODROPS · TIP</div><h1>Tip unavailable</h1><p className="claim-message">{error||"This tip could not be loaded."}</p></div></section></main>;
 
-  const identity=tip.identityType===1?"X":tip.identityType===2?"Telegram":"Wallet";
+  const identity=tip.identityType===1?"X":"Telegram";
   return <main className="claim-page">
     <nav className="nav"><a className="brand" href="/"><span className="brand-mark">S</span><span>SatoDrops</span></a><a className="secondary" href="/tip"><ArrowLeft size={15}/> Back</a></nav>
     <section className="claim-shell"><div className="claim-card">
@@ -208,7 +205,7 @@ export default function TipClaimPage() {
         <div className="summary-line"><span>Creator</span><b>{tip.creator.slice(0,6)}…{tip.creator.slice(-4)}</b></div>
       </div>
       {tip.claimed||tip.closed ? <div className="success-box"><Check size={16}/>{tip.claimed?"This tip has been claimed.":"This tip is closed."}</div> : <>
-        {tip.identityType!==3 && <div className="claim-wallet">
+        {<div className="claim-wallet">
           <span>{verified?"Identity verified":"Verify recipient identity"}</span>
           {tip.identityType===1
             ? <button className="create-btn" onClick={verifyX} disabled={working}>{verified?"X verified":"Verify with X"}</button>
