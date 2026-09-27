@@ -391,8 +391,6 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
             <div className="summary-total">{total} <span>{token}</span></div>
             <div className="summary-line"><span>Per claim</span><b>{amount || "0"} {token}</b></div>
             <div className="summary-line"><span>{claimMode==="wallet" ? "Eligible wallets" : "Claims"}</span><b>{effectiveClaims || "0"}</b></div>
-            <div className="summary-line"><span>Creation fee · 1%</span><b>{creationFee.toFixed(2)} {token}</b></div>
-            <div className="summary-line"><span>Claim fees reserved · 0.5%</span><b>{claimFees.toFixed(2)} {token}</b></div>
             <div className="summary-line total-funding"><span>Total to fund</span><b>{totalFunding} {token}</b></div>
             <div className="summary-line"><span>Network</span><b><span className="network-dot"/> Tempo</b></div>
             <div className="summary-note">You fund the rewards plus the 1% creation fee and 0.5% claim fees upfront. Claimants receive the full reward amount.</div>
