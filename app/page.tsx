@@ -156,7 +156,7 @@ export default function Home() {
 
     const createWalletConnectProvider = async () => {
       if (!WALLETCONNECT_PROJECT_ID) {
-        throw new Error("Mobile wallet connection is not configured. Add the WalletConnect project ID to Vercel Production.");
+        throw new Error("WalletConnect could not start. Please refresh the page and try again.");
       }
 
       const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
@@ -177,7 +177,10 @@ export default function Home() {
       });
 
       if (!walletConnectProvider.session) {
-        await walletConnectProvider.connect();
+        await walletConnectProvider.connect({
+          chains: [TEMPO_CHAIN_ID_DECIMAL],
+          rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
+        });
       }
 
       return walletConnectProvider as unknown as Eip1193Provider;
