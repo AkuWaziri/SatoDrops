@@ -393,7 +393,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
             <div className="summary-line"><span>{claimMode==="wallet" ? "Eligible wallets" : "Claims"}</span><b>{effectiveClaims || "0"}</b></div>
             <div className="summary-line total-funding"><span>Total to fund</span><b>{totalFunding} {token}</b></div>
             <div className="summary-line"><span>Network</span><b><span className="network-dot"/> Tempo</b></div>
-            <div className="summary-note">You fund the rewards plus the 1% creation fee and 0.5% claim fees upfront. Claimants receive the full reward amount.</div>
+            <div className="summary-note">You fund the rewards plus the 1% creation fee and 0.5% claim fees upfront. Claimants receive the full reward amount without the need to pay for extra gas fees.</div>
           </aside>
         </div>
       </section>
