@@ -15,7 +15,7 @@ declare global {
 const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_RPC = "https://rpc.tempo.xyz";
 const EXPLORER = "https://explore.tempo.xyz";
-const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS ?? "";
+const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_V2_CONTRACT_ADDRESS ?? "";
 const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
