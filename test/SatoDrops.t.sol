@@ -54,7 +54,7 @@ contract SatoDropsTest is Test {
 
     function testCreateChargesOnePercentAndReservesHalfPercentClaimFees() public {
         vm.prank(creator);
-        uint256 id = drops.createDrop(address(token), 5_000_000, 10, 0, "test");
+        uint256 id = drops.createDrop(address(token), 5_000_000, 10, 0, false, new address[](0), "test");
 
         assertEq(id, 0);
         assertEq(token.balanceOf(feeRecipient), 500_000);
@@ -83,7 +83,7 @@ contract SatoDropsTest is Test {
 
     function testClaimPaysFullRewardAndHalfPercentFee() public {
         vm.prank(creator);
-        uint256 id = drops.createDrop(address(token), 5_000_000, 10, 0, "test");
+        uint256 id = drops.createDrop(address(token), 5_000_000, 10, 0, false, new address[](0), "test");
 
         vm.prank(claimant);
         drops.claim(id);
@@ -96,7 +96,7 @@ contract SatoDropsTest is Test {
 
     function testCannotClaimSameDropTwice() public {
         vm.prank(creator);
-        uint256 id = drops.createDrop(address(token), 1_000_000, 2, 0, "test");
+        uint256 id = drops.createDrop(address(token), 1_000_000, 2, 0, false, new address[](0), "test");
 
         vm.prank(claimant);
         drops.claim(id);
@@ -108,7 +108,7 @@ contract SatoDropsTest is Test {
 
     function testExpiredDropRefundsRemainingRewardsAndReservedClaimFees() public {
         vm.prank(creator);
-        uint256 id = drops.createDrop(address(token), 5_000_000, 10, uint64(block.timestamp + 1 hours), "refund");
+        uint256 id = drops.createDrop(address(token), 5_000_000, 10, uint64(block.timestamp + 1 hours), false, new address[](0), "refund");
 
         uint256 creatorBefore = token.balanceOf(creator);
         vm.warp(block.timestamp + 1 hours);
@@ -123,7 +123,7 @@ contract SatoDropsTest is Test {
 
     function testExpiredDropAfterOneClaimRefundsOnlyRemainingBalance() public {
         vm.prank(creator);
-        uint256 id = drops.createDrop(address(token), 5_000_000, 10, uint64(block.timestamp + 1 hours), "refund");
+        uint256 id = drops.createDrop(address(token), 5_000_000, 10, uint64(block.timestamp + 1 hours), false, new address[](0), "refund");
 
         vm.prank(claimant);
         drops.claim(id);
