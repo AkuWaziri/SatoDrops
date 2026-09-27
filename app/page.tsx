@@ -3,6 +3,9 @@
 import { ArrowUpRight, Sparkles, Wallet } from "lucide-react";
 import { encodeFunctionData, formatUnits, keccak256, parseUnits, toBytes } from "viem";
 import { useEffect, useMemo, useState } from "react";
+import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
+import { defineChain } from "@reown/appkit/networks";
+import { EthersAdapter } from "@reown/appkit-adapter-ethers";
 
 type Eip1193Provider = NonNullable<Window["ethereum"]> & {
   on?: (event: string, handler: (...args: unknown[]) => void) => void;
@@ -13,14 +16,41 @@ const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_CHAIN_ID_DECIMAL = 4217;
 const WALLETCONNECT_PROJECT_ID = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? "";
 let activeWalletProvider: Eip1193Provider | undefined;
-let pendingMobileWalletConnect: Promise<Eip1193Provider> | null = null;
-const TEMPO_CHAIN = {
-  chainId: TEMPO_CHAIN_ID,
-  chainName: "Tempo Mainnet",
-  nativeCurrency: { name: "USD", symbol: "USD", decimals: 18 },
-  rpcUrls: ["https://rpc.tempo.xyz"],
-  blockExplorerUrls: ["https://explore.tempo.xyz"],
-};
+
+const TEMPO_NETWORK = defineChain({
+  id: TEMPO_CHAIN_ID_DECIMAL,
+  caipNetworkId: "eip155:4217",
+  chainNamespace: "eip155",
+  name: "Tempo Mainnet",
+  nativeCurrency: { name: "USD", symbol: "USD", decimals: 6 },
+  rpcUrls: {
+    default: { http: ["https://rpc.tempo.xyz"] },
+  },
+  blockExplorers: {
+    default: { name: "Tempo Explorer", url: "https://explore.tempo.xyz" },
+  },
+});
+
+if (WALLETCONNECT_PROJECT_ID) {
+  createAppKit({
+    adapters: [new EthersAdapter()],
+    networks: [TEMPO_NETWORK],
+    projectId: WALLETCONNECT_PROJECT_ID,
+    metadata: {
+      name: "SatoDrops",
+      description: "Stablecoin rewards on Tempo",
+      url: "https://satodrops.xyz",
+      icons: [],
+    },
+    features: {
+      analytics: false,
+      swaps: false,
+      onramp: false,
+      email: false,
+      socials: false,
+    },
+  });
+}
 
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_V2_CONTRACT_ADDRESS ?? "0x13048a5b34d182dc903871E89Db214847f8E1797";
 const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
@@ -113,8 +143,6 @@ export default function Home() {
   const [account, setAccount] = useState("");
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [walletError, setWalletError] = useState("");
-  const [walletConnectUri, setWalletConnectUri] = useState("");
-  const [walletConnectOpening, setWalletConnectOpening] = useState(false);
   const [creating, setCreating] = useState(false);
   const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[] }>>([]);
   const [recentDropsLoading, setRecentDropsLoading] = useState(true);
@@ -129,6 +157,10 @@ export default function Home() {
   const totalFunding = (rewardTotal + creationFee + claimFees).toFixed(2);
   const selectedToken = useMemo(() => tokens.find((t) => t.symbol === token) ?? tokens[0], [token]);
 
+  const { open } = useAppKit();
+  const { address: appKitAddress, isConnected: appKitConnected } = useAppKitAccount();
+  const { walletProvider } = useAppKitProvider("eip155");
+
   async function loadWalletBalances(provider: Eip1193Provider, wallet: string) {
     const nextBalances: Record<string, number> = {};
     for (const item of tokens) {
@@ -141,222 +173,13 @@ export default function Home() {
     setBalances(nextBalances);
   }
 
-  async function finishWalletConnection(provider: Eip1193Provider) {
-    let accounts = await provider.request({ method: "eth_accounts" }) as string[];
-    if (!accounts?.[0]) {
-      accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
-    }
-
-    const current = accounts?.[0] ?? "";
-    if (!current) throw new Error("No wallet account was returned. Approve the connection in your wallet.");
-
-    const chainId = await provider.request({ method: "eth_chainId" }) as string;
-    if (chainId.toLowerCase() !== TEMPO_CHAIN_ID) {
-      try {
-        await provider.request({
-          method: "wallet_switchEthereumChain",
-          params: [{ chainId: TEMPO_CHAIN_ID }],
-        });
-      } catch (switchError) {
-        const code = (switchError as { code?: number })?.code;
-        if (code === 4902 || code === -32602) {
-          await provider.request({ method: "wallet_addEthereumChain", params: [TEMPO_CHAIN] });
-        } else {
-          throw switchError;
-        }
-      }
-    }
-
-    setAccount(current);
-    await loadWalletBalances(provider, current);
-    setWalletConnectUri("");
-    setWalletConnectOpening(false);
-    return current;
-  }
-
-  async function findInjectedWallet() {
-    const discovered: Eip1193Provider[] = [];
-    const onProvider = (event: Event) => {
-      const detail = (event as CustomEvent).detail as { provider?: Eip1193Provider } | undefined;
-      if (detail?.provider && !discovered.includes(detail.provider)) discovered.push(detail.provider);
-    };
-
-    window.addEventListener("eip6963:announceProvider", onProvider);
-    window.dispatchEvent(new Event("eip6963:requestProvider"));
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    window.removeEventListener("eip6963:announceProvider", onProvider);
-
-    const legacy = window.ethereum as Eip1193Provider | undefined;
-    if (legacy && !discovered.includes(legacy)) discovered.unshift(legacy);
-
-    for (const candidate of discovered) {
-      try {
-        const accounts = await candidate.request({ method: "eth_accounts" }) as string[];
-        if (accounts?.[0]) return { provider: candidate, account: accounts[0] };
-      } catch {
-        // Ignore wallets that cannot answer discovery requests.
-      }
-    }
-
-    return undefined;
-  }
-
-  async function startMobileWalletConnect() {
-    if (activeWalletProvider) return activeWalletProvider;
-    if (pendingMobileWalletConnect) return pendingMobileWalletConnect;
-
-    if (!WALLETCONNECT_PROJECT_ID) {
-      throw new Error("Wallet connection is not configured.");
-    }
-
-    const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
-    const walletConnectProvider = await EthereumProvider.init({
-      projectId: WALLETCONNECT_PROJECT_ID,
-      optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
-      rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-      showQrModal: false,
-      metadata: {
-        name: "SatoDrops",
-        description: "Stablecoin rewards on Tempo",
-        url: window.location.origin,
-        icons: [],
-      },
-    });
-
-    const provider = walletConnectProvider as unknown as Eip1193Provider;
-    activeWalletProvider = provider;
-
-    if (walletConnectProvider.session) {
-      return provider;
-    }
-
-    walletConnectProvider.on("display_uri", (uri: string) => {
-      setWalletConnectUri(uri);
-      setWalletConnectOpening(true);
-    });
-
-    walletConnectProvider.on("accountsChanged", (...args: unknown[]) => {
-      const next = args[0] as string[] | undefined;
-      if (next?.[0]) {
-        setAccount(next[0]);
-        void loadWalletBalances(provider, next[0]);
-      } else {
-        setAccount("");
-        setBalances({});
-      }
-    });
-
-    const connection = walletConnectProvider.connect({
-      chains: [TEMPO_CHAIN_ID_DECIMAL],
-      rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-    }).then(async () => {
-      pendingMobileWalletConnect = null;
-      setWalletConnectOpening(false);
-      await finishWalletConnection(provider);
-      return provider;
-    }).catch((error) => {
-      pendingMobileWalletConnect = null;
-      activeWalletProvider = undefined;
-      setWalletConnectUri("");
-      setWalletConnectOpening(false);
-      throw error;
-    });
-
-    pendingMobileWalletConnect = connection;
-    return provider;
-  }
-
   async function connectWallet() {
     setWalletError("");
-
     try {
-      const isMobileBrowser = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
-      let provider = activeWalletProvider;
-
-      if (!provider) {
-        const injected = await findInjectedWallet();
-
-        if (injected) {
-          provider = injected.provider;
-          activeWalletProvider = provider;
-          await finishWalletConnection(provider);
-          return;
-        }
-
-        if (isMobileBrowser) {
-          provider = await startMobileWalletConnect();
-          setWalletConnectOpening(true);
-
-          if (walletConnectUri) {
-            return;
-          }
-
-          return;
-        }
-
-        const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
-        if (!WALLETCONNECT_PROJECT_ID) throw new Error("Wallet connection is not configured.");
-
-        const walletConnectProvider = await EthereumProvider.init({
-          projectId: WALLETCONNECT_PROJECT_ID,
-          optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
-          rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-          showQrModal: true,
-          qrModalOptions: { enableMobileFullScreen: true },
-          metadata: {
-            name: "SatoDrops",
-            description: "Stablecoin rewards on Tempo",
-            url: window.location.origin,
-            icons: [],
-          },
-        });
-
-        provider = walletConnectProvider as unknown as Eip1193Provider;
-        activeWalletProvider = provider;
-
-        if (!walletConnectProvider.session) {
-          await walletConnectProvider.connect({
-            chains: [TEMPO_CHAIN_ID_DECIMAL],
-            rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-          });
-        }
-
-        await finishWalletConnection(provider);
-      }
+      open({ view: "Connect" });
     } catch (error) {
-      activeWalletProvider = undefined;
-      pendingMobileWalletConnect = null;
-      setWalletConnectUri("");
-      setWalletConnectOpening(false);
       setWalletError(error instanceof Error ? error.message : "Wallet connection failed.");
     }
-  }
-
-  function openWalletConnectWallet(kind: string) {
-    if (!walletConnectUri) {
-      setWalletError("Still preparing the wallet connection. Try again in a moment.");
-      return;
-    }
-
-    const encoded = encodeURIComponent(walletConnectUri);
-    const links: Record<string, string> = {
-      metamask: `https://metamask.app.link/wc?uri=${encoded}`,
-      trust: `https://link.trustwallet.com/wc?uri=${encoded}`,
-      coinbase: `https://go.cb-w.com/wc?uri=${encoded}`,
-      rainbow: `https://rnbwapp.com/wc?uri=${encoded}`,
-      okx: `https://www.okx.com/download?deeplink=${encodeURIComponent(`okx://wallet/wc?uri=${encoded}`)}`,
-    };
-
-    const target = links[kind];
-    if (!target) return;
-    window.location.href = target;
-  }
-
-  function closeWalletPicker() {
-    setWalletConnectUri("");
-    setWalletConnectOpening(false);
-    pendingMobileWalletConnect = null;
-    activeWalletProvider = undefined;
   }
 
   async function createDrop() {
@@ -515,28 +338,38 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
   }, [account]);
 
   useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState !== "visible" || !activeWalletProvider) return;
+    if (!appKitConnected || !appKitAddress || !walletProvider) {
+      if (!appKitConnected) {
+        activeWalletProvider = undefined;
+      }
+      return;
+    }
 
-      void (async () => {
-        try {
-          const accounts = await activeWalletProvider?.request({ method: "eth_accounts" }) as string[];
-          if (accounts?.[0]) {
-            await finishWalletConnection(activeWalletProvider as Eip1193Provider);
-          }
-        } catch {
-          // The wallet may still be processing the approval.
-        }
-      })();
+    const provider = walletProvider as unknown as Eip1193Provider;
+    activeWalletProvider = provider;
+    setAccount(appKitAddress);
+    setWalletError("");
+    setWalletConnectOpening(false);
+    setWalletConnectUri("");
+    void loadWalletBalances(provider, appKitAddress);
+
+    const handleAccounts = (...args: unknown[]) => {
+      const next = args[0] as string[] | undefined;
+      if (next?.[0]) {
+        setAccount(next[0]);
+        void loadWalletBalances(provider, next[0]);
+      } else {
+        setAccount("");
+        setBalances({});
+      }
     };
 
-    document.addEventListener("visibilitychange", handleVisibility);
-    window.addEventListener("focus", handleVisibility);
+    provider.on?.("accountsChanged", handleAccounts);
+
     return () => {
-      document.removeEventListener("visibilitychange", handleVisibility);
-      window.removeEventListener("focus", handleVisibility);
+      provider.removeListener?.("accountsChanged", handleAccounts);
     };
-  }, []);
+  }, [appKitConnected, appKitAddress, walletProvider]);
 
   return (
     <main>
@@ -547,33 +380,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
       {walletError && <div className="wallet-error">{walletError}</div>}
 
-      {walletConnectOpening && (
-        <div className="wallet-picker-backdrop">
-          <div className="wallet-picker">
-            <div className="wallet-picker-head">
-              <div>
-                <div className="eyebrow">MOBILE WALLET</div>
-                <h3>Choose your wallet</h3>
-                <p>Open an installed wallet app to approve the SatoDrops connection.</p>
-              </div>
-              <button className="wallet-picker-close" onClick={closeWalletPicker} aria-label="Close">×</button>
-            </div>
 
-            {walletConnectUri ? (
-              <div className="wallet-picker-grid">
-                {[["metamask","MetaMask"],["trust","Trust Wallet"],["coinbase","Coinbase Wallet"],["rainbow","Rainbow"],["okx","OKX Wallet"]].map(([id,name]) => (
-                  <button key={id} className="wallet-picker-option" onClick={() => openWalletConnectWallet(id)}>
-                    <span className="wallet-picker-icon">{name.slice(0,1)}</span>
-                    <span>{name}</span>
-                    <ArrowUpRight size={15}/>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="wallet-picker-loading">
-                Preparing secure connection…
-              </div>
-            )}
 
             <p className="wallet-picker-note">After approving in the wallet, return to SatoDrops. The page will finish the connection automatically.</p>
           </div>
