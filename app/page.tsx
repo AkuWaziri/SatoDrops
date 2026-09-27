@@ -129,14 +129,40 @@ export default function Home() {
   async function connectWallet() {
     setWalletError("");
 
+    const findInjectedWallet = async () => {
+      const discovered: Eip1193Provider[] = [];
+      const onProvider = (event: Event) => {
+        const detail = (event as CustomEvent).detail as { provider?: Eip1193Provider } | undefined;
+        if (detail?.provider && !discovered.includes(detail.provider)) discovered.push(detail.provider);
+      };
+      window.addEventListener("eip6963:announceProvider", onProvider);
+      window.dispatchEvent(new Event("eip6963:requestProvider"));
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      window.removeEventListener("eip6963:announceProvider", onProvider);
+
+      const legacy = window.ethereum as Eip1193Provider | undefined;
+      if (legacy && !discovered.includes(legacy)) discovered.unshift(legacy);
+
+      for (const candidate of discovered) {
+        try {
+          const accounts = await candidate.request({ method: "eth_requestAccounts" }) as string[];
+          if (accounts?.[0]) return { provider: candidate, account: accounts[0] };
+        } catch {
+          // Try the next injected wallet or WalletConnect.
+        }
+      }
+      return undefined;
+    };
+
     const createWalletConnectProvider = async () => {
       if (!WALLETCONNECT_PROJECT_ID) {
-        throw new Error("Mobile wallet connection is not configured. Add the WalletConnect Network project ID in Vercel.");
+        throw new Error("Mobile wallet connection is not configured. Add the WalletConnect project ID to Vercel Production.");
       }
 
       const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
       const walletConnectProvider = await EthereumProvider.init({
         projectId: WALLETCONNECT_PROJECT_ID,
+        chains: [TEMPO_CHAIN_ID_DECIMAL],
         optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
         rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
         showQrModal: true,
@@ -157,31 +183,27 @@ export default function Home() {
 
     try {
       let provider = activeWalletProvider;
+      let current = "";
 
       if (!provider) {
-        const injected = window.ethereum as Eip1193Provider | undefined;
-
+        const injected = await findInjectedWallet();
         if (injected) {
-          try {
-            const accounts = await injected.request({ method: "eth_requestAccounts" }) as string[];
-            if (accounts?.[0]) {
-              provider = injected;
-            }
-          } catch {
-            provider = undefined;
-          }
-        }
-
-        if (!provider) {
+          provider = injected.provider;
+          current = injected.account;
+        } else {
           provider = await createWalletConnectProvider();
         }
-
         activeWalletProvider = provider;
       }
 
-      const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
-      const current = accounts?.[0];
-      if (!current) throw new Error("No wallet account was returned. Choose a wallet and approve the connection.");
+      if (!current) {
+        const accounts = await provider.request({ method: "eth_requestAccounts" }) as string[];
+        current = accounts?.[0] ?? "";
+      }
+
+      if (!current) {
+        throw new Error("No wallet account was returned. Open your wallet, approve the connection, and try again.");
+      }
 
       const chainId = await provider.request({ method: "eth_chainId" }) as string;
       if (chainId.toLowerCase() !== TEMPO_CHAIN_ID) {
@@ -189,7 +211,7 @@ export default function Home() {
           await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: TEMPO_CHAIN_ID }] });
         } catch (switchError) {
           const code = (switchError as { code?: number })?.code;
-          if (code === 4902) {
+          if (code === 4902 || code === -32602) {
             await provider.request({ method: "wallet_addEthereumChain", params: [TEMPO_CHAIN] });
           } else {
             throw switchError;
@@ -208,7 +230,8 @@ export default function Home() {
       }
       setBalances(nextBalances);
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : "Wallet connection failed.");
+      activeWalletProvider = undefined;
+      setWalletError(error instanceof Error ? error.message : "Wallet connection failed. Open your wallet app and approve the connection.");
     }
   }
 
