@@ -19,6 +19,7 @@ const TEMPO_CHAIN = {
 };
 
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS ?? "";
+const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 
 const tokens = [
@@ -268,7 +269,7 @@ export default function Home() {
         throw new Error("Drop was funded, but the new drop ID could not be read from the transaction receipt.");
       }
 
-      window.location.assign(`/claim?id=${dropId}`);
+      window.location.assign(`/claim?id=${dropId}&v=2`);
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : "Drop creation failed.");
     } finally {
@@ -401,7 +402,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
       <section className="existing-drops">
         <div className="section-heading"><div><div className="eyebrow">YOUR ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">PRIVATE TO CONNECTED WALLET</span></div>
-        {!account ? <div className="existing-empty">Connect your wallet to view your drops.</div> : recentDropsLoading ? <div className="existing-empty">Loading your drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops created by this wallet yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
+        {!account ? <div className="existing-empty">Connect your wallet to view your drops.</div> : recentDropsLoading ? <div className="existing-empty">Loading your drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops created by this wallet yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id+"&v=2"} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
       </section>
 
 
