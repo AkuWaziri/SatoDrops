@@ -45,9 +45,6 @@ if (WALLETCONNECT_PROJECT_ID) {
     features: {
       analytics: false,
       swaps: false,
-      onramp: false,
-      email: false,
-      socials: false,
     },
   });
 }
@@ -176,7 +173,7 @@ export default function Home() {
   async function connectWallet() {
     setWalletError("");
     try {
-      open({ view: "Connect" });
+      open();
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : "Wallet connection failed.");
     }
