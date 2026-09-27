@@ -167,9 +167,7 @@ export default function Home() {
         showQrModal: true,
         qrModalOptions: {
           enableMobileFullScreen: true,
-          mobileLinks: ["metamask", "trust", "coinbase", "rainbow", "phantom"],
-          desktopLinks: ["metamask", "rainbow", "coinbase", "trust"],
-        } as any,
+        },
         metadata: {
           name: "SatoDrops",
           description: "Stablecoin rewards on Tempo",
