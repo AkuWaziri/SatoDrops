@@ -27,6 +27,8 @@ contract SatoDrops {
     uint256 public nextDropId;
     mapping(uint256 => Drop) public drops;
     mapping(uint256 => mapping(address => bool)) public hasClaimed;
+    mapping(uint256 => mapping(address => bool)) public allowedClaimants;
+    mapping(uint256 => uint256) public allowedClaimantCount;
 
     event DropCreated(
         uint256 indexed dropId,
@@ -37,7 +39,9 @@ contract SatoDrops {
         uint256 expiresAt,
         uint256 rewardTotal,
         uint256 creationFee,
-        uint256 claimFeesReserved
+        uint256 claimFeesReserved,
+        bool walletSpecific,
+        uint256 allowedWallets
     );
     event DropClaimed(uint256 indexed dropId, address indexed claimant, uint256 reward, uint256 claimFee);
     event DropClosed(uint256 indexed dropId, uint256 refunded);
@@ -45,6 +49,8 @@ contract SatoDrops {
     error InvalidToken();
     error InvalidAmount();
     error InvalidClaims();
+    error InvalidWalletList();
+    error NotAllowed();
     error Expired();
     error NotExpired();
     error Closed();
@@ -71,11 +77,24 @@ contract SatoDrops {
         uint128 amountPerClaim,
         uint64 maxClaims,
         uint64 expiresAt,
+        bool walletSpecific,
+        address[] calldata wallets,
         string calldata message
     ) external nonReentrant returns (uint256 dropId) {
         if (token == address(0)) revert InvalidToken();
         if (amountPerClaim == 0) revert InvalidAmount();
         if (maxClaims == 0) revert InvalidClaims();
+        if (walletSpecific) {
+            if (wallets.length == 0 || wallets.length > 100 || wallets.length != maxClaims) revert InvalidWalletList();
+            for (uint256 i = 0; i < wallets.length; i++) {
+                address wallet = wallets[i];
+                if (wallet == address(0) || allowedClaimants[dropId][wallet]) revert InvalidWalletList();
+                allowedClaimants[dropId][wallet] = true;
+            }
+            allowedClaimantCount[dropId] = wallets.length;
+        } else if (wallets.length != 0) {
+            revert InvalidWalletList();
+        }
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert Expired();
 
         uint256 rewardTotal = uint256(amountPerClaim) * uint256(maxClaims);
@@ -106,7 +125,9 @@ contract SatoDrops {
             expiresAt,
             rewardTotal,
             creationFee,
-            claimFeesReserved
+            claimFeesReserved,
+            walletSpecific,
+            wallets.length
         );
     }
 
@@ -117,6 +138,7 @@ contract SatoDrops {
         if (drop.expiresAt != 0 && block.timestamp >= drop.expiresAt) revert Expired();
         if (drop.claimed >= drop.maxClaims) revert SoldOut();
         if (hasClaimed[dropId][msg.sender]) revert AlreadyClaimed();
+        if (allowedClaimantCount[dropId] != 0 && !allowedClaimants[dropId][msg.sender]) revert NotAllowed();
 
         uint256 reward = uint256(drop.amountPerClaim);
         uint256 claimFee = (reward * CLAIM_FEE_BPS) / 10_000;
@@ -128,6 +150,14 @@ contract SatoDrops {
         _safeTransfer(drop.token, feeRecipient, claimFee);
 
         emit DropClaimed(dropId, msg.sender, reward, claimFee);
+    }
+
+    function isWalletSpecific(uint256 dropId) external view returns (bool) {
+        return allowedClaimantCount[dropId] != 0;
+    }
+
+    function isAllowedClaimant(uint256 dropId, address wallet) external view returns (bool) {
+        return allowedClaimantCount[dropId] == 0 || allowedClaimants[dropId][wallet];
     }
 
     function closeExpiredDrop(uint256 dropId) external nonReentrant {
