@@ -71,8 +71,11 @@ const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 
 const tokens = [
   { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
-  { symbol: "USDT", address: "0x20c00000000000000000000014f22ca97301eb73", decimals: 6 },
+  { symbol: "USDT0", address: "0x20c00000000000000000000014f22ca97301eb73", decimals: 6 },
   { symbol: "pathUSD", address: "0x20c0000000000000000000000000000000000000", decimals: 6 },
+  { symbol: "AlphaUSD", address: "0x20c0000000000000000000000000000000000001", decimals: 6 },
+  { symbol: "BetaUSD", address: "0x20c0000000000000000000000000000000000002", decimals: 6 },
+  { symbol: "ThetaUSD", address: "0x20c0000000000000000000000000000000000003", decimals: 6 },
 ];
 
 const erc20Abi = [
@@ -427,7 +430,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
             {claimMode === "wallet" && <div className="input-wrap" style={{marginBottom:18}}><textarea value={walletsText} onChange={e=>setWalletsText(e.target.value)} placeholder="0x1234…&#10;0xabcd…" style={{minHeight:110}}/><span>{walletCount}/100</span></div>}
             <div className="summary-note" style={{marginBottom:18}}>{claimMode==="public" ? "Anyone can claim until the drop is full. The first eligible wallets to claim receive the rewards." : "Only the wallets listed here can claim. Each listed wallet can claim once."}</div>
             <label>Reward token</label>
-            <div className="token-row">{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>{t.symbol==="USDC"?"◉":t.symbol==="USDT"?"₮":"◇"} {t.symbol}</button>)}</div>
+            <div className="token-row">{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>{t.symbol==="USDC"?"◉":t.symbol==="USDT0"?"₮":"◇"} {t.symbol}</button>)}</div>
             {account && <div className="balance-row"><span>Connected balance</span><b>{(balances[selectedToken.symbol] ?? 0).toFixed(2)} {selectedToken.symbol}</b></div>}
             <div className="two-col">
               <div><label>Reward per person</label><div className="input-wrap"><input value={amount} onChange={e=>setAmount(e.target.value)} inputMode="decimal"/><span>{token}</span></div></div>
