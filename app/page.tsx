@@ -112,6 +112,8 @@ export default function Home() {
   const [account, setAccount] = useState("");
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [walletError, setWalletError] = useState("");
+  const [walletConnectUri, setWalletConnectUri] = useState("");
+  const [walletConnectOpening, setWalletConnectOpening] = useState(false);
   const [creating, setCreating] = useState(false);
   const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[] }>>([]);
   const [recentDropsLoading, setRecentDropsLoading] = useState(true);
@@ -160,55 +162,14 @@ export default function Home() {
       }
 
       const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
+      const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
       const walletConnectProvider = await EthereumProvider.init({
         projectId: WALLETCONNECT_PROJECT_ID,
         optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
         rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
-        showQrModal: true,
+        showQrModal: !mobile,
         qrModalOptions: {
           enableMobileFullScreen: true,
-          mobileWallets: [
-            {
-              id: "metamask",
-              name: "MetaMask",
-              links: {
-                native: "metamask://",
-                universal: "https://metamask.app.link",
-              },
-            },
-            {
-              id: "trust",
-              name: "Trust Wallet",
-              links: {
-                native: "trust://",
-                universal: "https://link.trustwallet.com",
-              },
-            },
-            {
-              id: "coinbase_wallet",
-              name: "Coinbase Wallet",
-              links: {
-                native: "cbwallet://",
-                universal: "https://go.cb-w.com",
-              },
-            },
-            {
-              id: "rainbow",
-              name: "Rainbow",
-              links: {
-                native: "rainbow://",
-                universal: "https://rnbwapp.com",
-              },
-            },
-            {
-              id: "okx_wallet",
-              name: "OKX Wallet",
-              links: {
-                native: "okx://",
-                universal: "https://www.okx.com",
-              },
-            },
-          ],
         },
         metadata: {
           name: "SatoDrops",
@@ -219,6 +180,11 @@ export default function Home() {
       });
 
       if (!walletConnectProvider.session) {
+        if (mobile) {
+          walletConnectProvider.on("display_uri", (uri: string) => {
+            setWalletConnectUri(uri);
+          });
+        }
         await walletConnectProvider.connect({
           chains: [TEMPO_CHAIN_ID_DECIMAL],
           rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
@@ -287,7 +253,30 @@ export default function Home() {
     } catch (error) {
       activeWalletProvider = undefined;
       setWalletError(error instanceof Error ? error.message : "Wallet connection failed. Open your wallet app and approve the connection.");
+    } finally {
+      setWalletConnectOpening(false);
     }
+  }
+
+  function openWalletConnectWallet(kind: string) {
+    if (!walletConnectUri) return;
+    const encoded = encodeURIComponent(walletConnectUri);
+    const links: Record<string, string> = {
+      metamask: `https://metamask.app.link/wc?uri=${encoded}`,
+      trust: `https://link.trustwallet.com/wc?uri=${encoded}`,
+      coinbase: `https://go.cb-w.com/wc?uri=${encoded}`,
+      rainbow: `https://rnbwapp.com/wc?uri=${encoded}`,
+      okx: `https://www.okx.com/download?deeplink=${encodeURIComponent(`okx://wallet/wc?uri=${encoded}`)}`,
+    };
+    const target = links[kind];
+    if (!target) return;
+    window.location.href = target;
+  }
+
+  function closeWalletPicker() {
+    setWalletConnectUri("");
+    setWalletConnectOpening(false);
+    activeWalletProvider = undefined;
   }
 
   async function createDrop() {
@@ -469,6 +458,35 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
       </nav>
 
       {walletError && <div className="wallet-error">{walletError}</div>}
+
+      {(walletConnectOpening || walletConnectUri) && (
+        <div className="wallet-picker-backdrop">
+          <div className="wallet-picker">
+            <div className="wallet-picker-head">
+              <div>
+                <div className="eyebrow">CONNECT WALLET</div>
+                <h3>Open your wallet</h3>
+                <p>Select the wallet app installed on your phone.</p>
+              </div>
+              <button className="wallet-picker-close" onClick={closeWalletPicker} aria-label="Close">×</button>
+            </div>
+            {!walletConnectUri ? (
+              <div className="wallet-picker-loading">Preparing secure WalletConnect session…</div>
+            ) : (
+              <div className="wallet-picker-grid">
+                {[["metamask","MetaMask"],["trust","Trust Wallet"],["coinbase","Coinbase Wallet"],["rainbow","Rainbow"],["okx","OKX Wallet"]].map(([id,name]) => (
+                  <button key={id} className="wallet-picker-option" onClick={() => openWalletConnectWallet(id)}>
+                    <span className="wallet-picker-icon">{name.slice(0,1)}</span>
+                    <span>{name}</span>
+                    <ArrowUpRight size={15}/>
+                  </button>
+                ))}
+              </div>
+            )}
+            <p className="wallet-picker-note">The wallet app must be installed on this phone. After approval, return to SatoDrops.</p>
+          </div>
+        </div>
+      )}
 
       <section className="hero">
         <div className="hero-copy">
