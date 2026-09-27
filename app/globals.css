@@ -9,3 +9,75 @@
 
 .existing-drops{max-width:1000px;margin:auto;padding:75px 28px}.existing-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.existing-drop{background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px;transition:transform .15s ease,border-color .15s ease}.existing-drop:hover{transform:translateY(-2px);border-color:#cfd3ce}.existing-top,.existing-meta{display:flex;justify-content:space-between;align-items:center}.existing-amount{font:700 30px "Space Grotesk";letter-spacing:-.04em;margin:25px 0 15px}.existing-amount span{font:600 12px "DM Sans";color:#858b8a}.existing-meta{font-size:10px;color:#858a8d;margin-bottom:8px}.existing-creator{display:flex;align-items:center;justify-content:space-between;gap:5px;margin-top:13px;font-size:10px;color:#666d69}.existing-empty{border:1px solid var(--line);border-radius:14px;padding:22px;text-align:center;color:#858a8d;font-size:11px;background:#fff}@media(max-width:800px){.existing-drops{padding:55px 18px}.existing-grid{grid-template-columns:1fr 1fr}}@media(max-width:600px){.existing-grid{grid-template-columns:1fr}}
 .wallet-picker-backdrop{position:fixed;inset:0;z-index:1000;background:rgba(15,18,17,.68);display:grid;place-items:center;padding:20px}.wallet-picker{width:min(460px,100%);background:#fff;border-radius:22px;padding:24px;box-shadow:0 30px 100px rgba(0,0,0,.28)}.wallet-picker-head{display:flex;justify-content:space-between;gap:18px}.wallet-picker-head h3{font:600 28px "Space Grotesk";letter-spacing:-.04em;margin:7px 0}.wallet-picker-head p{font-size:12px;color:#777d7b;margin:0}.wallet-picker-close{border:0;background:#f1f2ef;width:34px;height:34px;border-radius:50%;font-size:22px;cursor:pointer}.wallet-picker-grid{display:grid;gap:9px;margin-top:22px}.wallet-picker-option{display:flex;align-items:center;gap:12px;width:100%;border:1px solid #e1e4e0;background:#fff;border-radius:12px;padding:13px;text-align:left;font-size:13px;font-weight:600;cursor:pointer}.wallet-picker-option:hover{border-color:#aaa}.wallet-picker-option svg{margin-left:auto}.wallet-picker-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;background:#eef1ed;font:700 14px "Space Grotesk"}.wallet-picker-loading{margin-top:22px;padding:20px;border:1px solid #e4e7e3;border-radius:12px;font-size:12px;color:#777d7b}.wallet-picker-note{font-size:10px;line-height:1.5;color:#929795;margin:16px 2px 0}@media(max-width:600px){.wallet-picker-backdrop{align-items:end;padding:10px}.wallet-picker{border-radius:22px 22px 12px 12px;padding:20px}}
+
+/* Responsive layout hardening */
+html,body{width:100%;max-width:100%;overflow-x:hidden}
+img{max-width:100%}
+button,a{touch-action:manipulation}
+.nav,.hero,.builder-section,.how,.existing-drops,footer{width:100%;max-width:1180px}
+.hero,.builder-section,.how,.existing-drops{min-width:0}
+.token-row{flex-wrap:wrap}
+.token{min-width:0}
+.form-card,.summary-card,.drop-preview,.existing-drop,.claim-card{min-width:0}
+.input-wrap{min-width:0}
+.input-wrap input,.form-card textarea,.form-card input{min-width:0;max-width:100%}
+@media(max-width:1100px){
+  .hero{gap:48px}
+  .hero h1{font-size:62px}
+  .builder{max-width:900px}
+  .existing-grid{grid-template-columns:repeat(2,1fr)}
+}
+@media(max-width:800px){
+  .nav{height:auto;min-height:70px;padding:14px 18px;gap:14px}
+  .nav-links{gap:10px}
+  .nav-links .wallet-btn{white-space:nowrap;padding:10px 12px}
+  .hero{grid-template-columns:1fr;padding-top:48px;padding-bottom:70px;gap:28px}
+  .hero-copy{min-width:0}
+  .hero h1{font-size:clamp(44px,8vw,54px);line-height:1}
+  .hero-text{max-width:650px}
+  .hero-card{min-height:390px}
+  .drop-preview{transform:none}
+  .builder-section{padding-top:65px;padding-bottom:65px}
+  .builder{grid-template-columns:1fr}
+  .summary-card{order:2}
+  .steps{grid-template-columns:1fr 1fr}
+  footer{padding:24px 18px}
+}
+@media(max-width:560px){
+  .nav{padding:12px 14px}
+  .brand{font-size:16px}
+  .nav-links{margin-left:auto}
+  .nav-links .wallet-btn{font-size:12px}
+  .hero,.builder-section,.how,.existing-drops{padding-left:14px;padding-right:14px}
+  .hero{padding-top:38px;padding-bottom:52px}
+  .hero h1{font-size:clamp(40px,11vw,50px);letter-spacing:-.055em}
+  .hero-text{font-size:15px}
+  .hero-actions{display:grid;grid-template-columns:1fr;gap:8px}
+  .primary,.secondary{justify-content:center;text-align:center}
+  .trust-row{flex-wrap:wrap;row-gap:8px}
+  .hero-card{min-height:350px}
+  .drop-preview{padding:19px;border-radius:19px}
+  .preview-icon{margin-top:30px}
+  .preview-amount{font-size:34px}
+  .section-heading{align-items:flex-start;gap:16px}
+  .section-heading h2,.how h2{font-size:30px}
+  .step-count{white-space:nowrap;padding-top:4px}
+  .form-card,.summary-card{padding:20px}
+  .two-col{grid-template-columns:1fr;gap:16px}
+  .token-row{display:grid;grid-template-columns:1fr;gap:7px}
+  .token{width:100%;text-align:left}
+  .existing-grid{grid-template-columns:1fr}
+  .steps{grid-template-columns:1fr}
+  .step{margin-right:0;padding:20px 0}
+  footer{gap:12px;align-items:flex-start}
+  footer>a{margin-left:0;width:100%}
+}
+@media(max-width:380px){
+  .nav{padding-left:10px;padding-right:10px}
+  .brand{gap:7px;font-size:14px}
+  .brand-mark{width:26px;height:26px}
+  .nav-links .wallet-btn{padding:9px 10px}
+  .hero h1{font-size:38px}
+  .form-card,.summary-card{padding:16px}
+  .summary-total{font-size:29px}
+}
