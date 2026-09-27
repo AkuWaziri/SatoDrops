@@ -12,7 +12,6 @@ contract SatoTips {
 
     uint8 public constant IDENTITY_X = 1;
     uint8 public constant IDENTITY_TELEGRAM = 2;
-    uint8 public constant IDENTITY_WALLET = 3;
 
     address public immutable feeRecipient;
     address public immutable identityVerifier;
@@ -84,7 +83,7 @@ contract SatoTips {
     ) external nonReentrant returns (uint256 tipId) {
         if (token == address(0)) revert InvalidToken();
         if (amount == 0) revert InvalidAmount();
-        if (identityType < IDENTITY_X || identityType > IDENTITY_WALLET) revert InvalidIdentity();
+        if (identityType < IDENTITY_X || identityType > IDENTITY_TELEGRAM) revert InvalidIdentity();
         if (identityHash == bytes32(0)) revert InvalidIdentity();
         if (expiresAt != 0 && expiresAt <= block.timestamp) revert InvalidExpiry();
 
@@ -130,9 +129,9 @@ contract SatoTips {
         if (tip.claimed) revert AlreadyClaimed();
         if (tip.expiresAt != 0 && block.timestamp >= tip.expiresAt) revert Expired();
 
-        if (tip.identityType == IDENTITY_WALLET) {
-            if (tip.identityHash != keccak256(abi.encodePacked(msg.sender))) revert NotAuthorized();
-        } else {
+        if (tip.identityType != IDENTITY_X && tip.identityType != IDENTITY_TELEGRAM) revert InvalidIdentity();
+
+        {
             bytes32 digest = keccak256(
                 abi.encodePacked(
                     "\x19Ethereum Signed Message:\n32",
