@@ -50,6 +50,8 @@ const satodropsAbi = [
       { name: "amountPerClaim", type: "uint128" },
       { name: "maxClaims", type: "uint64" },
       { name: "expiresAt", type: "uint64" },
+      { name: "walletSpecific", type: "bool" },
+      { name: "wallets", type: "address[]" },
       { name: "message", type: "string" },
     ],
     outputs: [{ name: "dropId", type: "uint256" }],
@@ -99,6 +101,8 @@ export default function Home() {
   const [token, setToken] = useState("USDC");
   const [amount, setAmount] = useState("5");
   const [claims, setClaims] = useState("10");
+  const [claimMode, setClaimMode] = useState<"public"|"wallet">("public");
+  const [walletsText, setWalletsText] = useState("");
   const [message, setMessage] = useState("Bug bounty — first valid report");
   const [created, setCreated] = useState(false);
   const [account, setAccount] = useState("");
@@ -108,7 +112,10 @@ export default function Home() {
   const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[] }>>([]);
   const [recentDropsLoading, setRecentDropsLoading] = useState(true);
 
-  const rewardTotal = Number(amount || 0) * Number(claims || 0);
+  const walletList = walletsText.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
+  const walletCount = walletList.length;
+  const effectiveClaims = claimMode === "wallet" ? walletCount : Number(claims || 0);
+  const rewardTotal = Number(amount || 0) * effectiveClaims;
   const creationFee = rewardTotal * 0.01;
   const claimFees = rewardTotal * 0.005;
   const total = rewardTotal.toFixed(2);
@@ -178,9 +185,24 @@ export default function Home() {
       setWalletError("Enter a reward amount greater than zero.");
       return;
     }
-    if (!Number.isInteger(claimCount) || claimCount < 1 || claimCount > 20) {
-      setWalletError("Claims must be a whole number between 1 and 20.");
+    if (claimMode === "public" && (!Number.isInteger(claimCount) || claimCount < 1 || claimCount > 20)) {
+      setWalletError("Public drops can have between 1 and 20 claims.");
       return;
+    }
+    if (claimMode === "wallet") {
+      if (walletCount < 1 || walletCount > 100) {
+        setWalletError("Add between 1 and 100 wallet addresses.");
+        return;
+      }
+      const unique = new Set(walletList.map((wallet) => wallet.toLowerCase()));
+      if (unique.size !== walletCount) {
+        setWalletError("Wallet list contains duplicate addresses.");
+        return;
+      }
+      if (walletList.some((wallet) => !/^0x[a-fA-F0-9]{40}$/.test(wallet))) {
+        setWalletError("Every wallet must be a valid EVM address.");
+        return;
+      }
     }
 
     try {
@@ -216,8 +238,10 @@ export default function Home() {
         args: [
           selectedToken.address as `0x${string}`,
           rewardPerClaim,
-          BigInt(claimCount),
+          BigInt(effectiveClaims),
           0n,
+          claimMode === "wallet",
+          (claimMode === "wallet" ? walletList : []) as `0x${string}`[],
           message,
         ],
       });
@@ -236,7 +260,7 @@ export default function Home() {
 
       const logs = (createReceipt as { logs?: Array<{ address?: string; topics?: string[] }> }).logs ?? [];
       const contractLog = logs.find(
-        (log) => log.address?.toLowerCase() === SATODROPS_CONTRACT.toLowerCase() && (log.topics?.length ?? 0) >= 2
+        (log) => log.address?.toLowerCase() === SATODROPS_CONTRACT.toLowerCase() && log.topics?.[0]?.toLowerCase() === DROP_CREATED_TOPIC.toLowerCase()
       );
       const dropId = contractLog?.topics?.[1] ? BigInt(contractLog.topics[1]).toString() : "";
 
@@ -345,12 +369,16 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
         <div className="section-heading"><div><div className="eyebrow">CREATE A DROP</div><h2>Turn a little value into an action.</h2></div><span className="step-count">01 / 02</span></div>
         <div className="builder">
           <div className="form-card">
+            <label>Who can claim?</label>
+            <div className="token-row">{[["public","Public · first come first serve"],["wallet","Specific wallets · up to 100"]].map(([value,label])=><button key={value} className={claimMode===value?"token active":"token"} onClick={()=>setClaimMode(value as "public"|"wallet")}>{label}</button>)}</div>
+            {claimMode === "wallet" && <div className="input-wrap" style={{marginBottom:18}}><textarea value={walletsText} onChange={e=>setWalletsText(e.target.value)} placeholder="0x1234…&#10;0xabcd…" style={{minHeight:110}}/><span>{walletCount}/100</span></div>}
+            <div className="summary-note" style={{marginBottom:18}}>{claimMode==="public" ? "Anyone can claim until the drop is full. The first eligible wallets to claim receive the rewards." : "Only the wallets listed here can claim. Each listed wallet can claim once."}</div>
             <label>Reward token</label>
             <div className="token-row">{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>{t.symbol==="USDC"?"◉":t.symbol==="USDT"?"₮":"◇"} {t.symbol}</button>)}</div>
             {account && <div className="balance-row"><span>Connected balance</span><b>{(balances[selectedToken.symbol] ?? 0).toFixed(2)} {selectedToken.symbol}</b></div>}
             <div className="two-col">
               <div><label>Reward per person</label><div className="input-wrap"><input value={amount} onChange={e=>setAmount(e.target.value)} inputMode="decimal"/><span>{token}</span></div></div>
-              <div><label>Number of claims</label><div className="input-wrap"><input value={claims} onChange={e=>setClaims(e.target.value)} inputMode="numeric" max={20}/><span>people</span></div></div>
+              <div><label>{claimMode==="wallet" ? "Eligible wallets" : "Number of claims"}</label><div className="input-wrap"><input value={claimMode==="wallet"?String(walletCount):claims} onChange={e=>setClaims(e.target.value)} inputMode="numeric" max={claimMode==="wallet"?100:20} disabled={claimMode==="wallet"}/><span>people</span></div></div>
             </div>
             <label>What is this reward for?</label>
             <textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={120}/>
@@ -361,7 +389,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
             <div className="summary-label">DROP SUMMARY</div>
             <div className="summary-total">{total} <span>{token}</span></div>
             <div className="summary-line"><span>Per claim</span><b>{amount || "0"} {token}</b></div>
-            <div className="summary-line"><span>Claims</span><b>{claims || "0"}</b></div>
+            <div className="summary-line"><span>{claimMode==="wallet" ? "Eligible wallets" : "Claims"}</span><b>{effectiveClaims || "0"}</b></div>
             <div className="summary-line"><span>Creation fee · 1%</span><b>{creationFee.toFixed(2)} {token}</b></div>
             <div className="summary-line"><span>Claim fees reserved · 0.5%</span><b>{claimFees.toFixed(2)} {token}</b></div>
             <div className="summary-line total-funding"><span>Total to fund</span><b>{totalFunding} {token}</b></div>
