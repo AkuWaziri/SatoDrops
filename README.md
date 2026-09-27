@@ -42,3 +42,17 @@ A drop contains creator, token, amount per claim, maximum claims, claimed count,
 The first implementation should keep the contract small and auditable. UI and contract behavior should be built around one core action: **fund a reward, share it, claim it**.
 
 <!-- production rebuild trigger -->
+
+
+## Mobile wallet connections
+
+SatoDrops uses `@walletconnect/ethereum-provider` for mobile/browser wallet connections. The integration uses a WalletConnect Network Project ID, not a paid Reown AppKit project.
+
+Create/manage the connection project from the free WalletConnect Dashboard:
+https://dashboard.walletconnect.com/
+
+Set the resulting Project ID as:
+
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`
+
+The app remains restricted to Tempo mainnet for this connection flow.
