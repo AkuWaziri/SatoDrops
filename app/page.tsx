@@ -351,8 +351,6 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
     activeWalletProvider = provider;
     setAccount(appKitAddress);
     setWalletError("");
-    setWalletConnectOpening(false);
-    setWalletConnectUri("");
     void loadWalletBalances(provider, appKitAddress);
 
     const handleAccounts = (...args: unknown[]) => {
