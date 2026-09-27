@@ -40,3 +40,5 @@ SatoDrops lets a creator fund a small stablecoin reward, share a claim link, and
 A drop contains creator, token, amount per claim, maximum claims, claimed count, optional expiry, message/purpose, funded amount, and claim transaction(s).
 
 The first implementation should keep the contract small and auditable. UI and contract behavior should be built around one core action: **fund a reward, share it, claim it**.
+
+<!-- production rebuild trigger -->
