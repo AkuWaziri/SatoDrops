@@ -16,10 +16,12 @@ const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_RPC = "https://rpc.tempo.xyz";
 const EXPLORER = "https://explore.tempo.xyz";
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_CONTRACT_ADDRESS ?? "";
+const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
 const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
-const DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
+const LEGACY_DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
+const CURRENT_DEPLOYMENT_TX = process.env.NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX ?? "";
 
 const tokens: Record<string, { symbol: string; address: string; decimals: number }> = {
   "0x20c000000000000000000000b9537d11c60e8b50": { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
@@ -79,14 +81,19 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   return body.result as T;
 }
 
-async function getDropLogs(dropId: string) {
+async function getDropLogs(dropId: string, contractAddress: string, deploymentTx: string) {
   const paddedId = BigInt(dropId).toString(16).padStart(64, "0");
-  const deploymentRaw = await rpc<{ blockNumber?: string } | null>("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
-  if (!deploymentRaw) throw new Error("Could not locate the SatoDrops deployment transaction.");
-  const deploymentReceipt = deploymentRaw;
-  if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
-
-  const fromBlock = BigInt(deploymentReceipt.blockNumber as string);
+  let fromBlock: bigint;
+  if (deploymentTx) {
+    const deploymentRaw = await rpc<{ blockNumber?: string } | null>("eth_getTransactionReceipt", [deploymentTx]);
+    if (!deploymentRaw) throw new Error("Could not locate the SatoDrops deployment transaction.");
+    if (!deploymentRaw.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
+    fromBlock = BigInt(deploymentRaw.blockNumber);
+  } else {
+    const latestRaw = await rpc<string>("eth_blockNumber", []);
+    const latestBlock = BigInt(latestRaw);
+    fromBlock = latestBlock > 100000n ? latestBlock - 100000n + 1n : 0n;
+  }
   const latestRaw = await rpc<string>("eth_blockNumber", []);
   const latestBlock = BigInt(latestRaw);
   const maxRange = 100000n;
@@ -100,7 +107,7 @@ async function getDropLogs(dropId: string) {
         jsonrpc: "2.0",
         id: 1,
         method: "eth_getLogs",
-        params: [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16), topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId] }],
+        params: [{ address: contractAddress, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16), topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId] }],
       }),
     });
     if (!response.ok) throw new Error("Tempo RPC request failed.");
@@ -160,13 +167,15 @@ export default function ClaimPage() {
   const [claimHistory, setClaimHistory] = useState<Array<{ claimant: string; txHash: string }>>([]);
   const [dropTxHash, setDropTxHash] = useState("");
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [contractAddress, setContractAddress] = useState("");
+  const [deploymentTx, setDeploymentTx] = useState("");
 
   const token = useMemo(() => drop ? tokens[drop.token.toLowerCase()] : undefined, [drop]);
 
   async function loadHistory(historyDropId: string) {
     setHistoryLoading(true);
     try {
-      const logs = await getDropLogs(historyDropId);
+      const logs = await getDropLogs(historyDropId, contractAddress, deploymentTx);
       const createdLog = logs.find((log) => log.topics?.[0] === DROP_CREATED_TOPIC);
       if (createdLog?.transactionHash) setDropTxHash(createdLog.transactionHash);
       const claims = logs.filter((log) => log.topics?.[0] === DROP_CLAIMED_TOPIC && (log.topics?.length ?? 0) >= 3).map((log) => {
@@ -180,9 +189,15 @@ export default function ClaimPage() {
   }
 
   useEffect(() => {
-    const id = new URLSearchParams(window.location.search).get("id") ?? "";
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get("id") ?? "";
+    const isCurrent = params.get("v") === "2";
+    const selectedContract = isCurrent ? SATODROPS_CONTRACT : SATODROPS_LEGACY_CONTRACT;
+    const selectedDeploymentTx = isCurrent ? CURRENT_DEPLOYMENT_TX : LEGACY_DEPLOYMENT_TX;
     setDropId(id);
-    if (!SATODROPS_CONTRACT || !id || !/^\d+$/.test(id)) {
+    setContractAddress(selectedContract);
+    setDeploymentTx(selectedDeploymentTx);
+    if (!selectedContract || !id || !/^\d+$/.test(id)) {
       setError(!SATODROPS_CONTRACT ? "SatoDrops contract is not configured yet." : "Invalid claim link.");
       setLoading(false);
       return;
@@ -190,7 +205,7 @@ export default function ClaimPage() {
     const load = async () => {
       try {
         const data = await rpc<string>("eth_call", [{
-          to: SATODROPS_CONTRACT,
+          to: selectedContract,
           data: encodeFunctionData({ abi, functionName: "drops", args: [BigInt(id)] }),
         }, "latest"]);
         setDrop(decodeDropResult(data));
@@ -230,10 +245,10 @@ export default function ClaimPage() {
       }
       setAccount(current);
       const data = encodeFunctionData({ abi, functionName: "hasClaimed", args: [BigInt(dropId), current as `0x${string}`] });
-      const raw = await rpc<string>("eth_call", [{ to: SATODROPS_CONTRACT, data }, "latest"]);
+      const raw = await rpc<string>("eth_call", [{ to: contractAddress, data }, "latest"]);
       setAlreadyClaimed(BigInt(raw) !== 0n);
       const allowedData = encodeFunctionData({ abi, functionName: "isAllowedClaimant", args: [BigInt(dropId), current as `0x${string}`] });
-      const allowedRaw = await rpc<string>("eth_call", [{ to: SATODROPS_CONTRACT, data: allowedData }, "latest"]);
+      const allowedRaw = await rpc<string>("eth_call", [{ to: contractAddress, data: allowedData }, "latest"]);
       setWalletAllowed(BigInt(allowedRaw) !== 0n);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Wallet connection failed.");
@@ -253,7 +268,7 @@ export default function ClaimPage() {
     try {
       setClaiming(true);
       const data = encodeFunctionData({ abi, functionName: "claim", args: [BigInt(dropId)] });
-      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: account, to: SATODROPS_CONTRACT, data, feeToken: PATH_USD_FEE_TOKEN }] }) as string;
+      const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: account, to: contractAddress, data, feeToken: PATH_USD_FEE_TOKEN }] }) as string;
       await waitForReceipt(hash);
       setSuccessHash(hash);
       await loadHistory(dropId);
