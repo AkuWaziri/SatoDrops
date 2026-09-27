@@ -63,7 +63,7 @@ const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.sl
 
 const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
 const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
-const DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
+const DEPLOYMENT_TX = process.env.NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX ?? "";
 
 async function readTempoRpc(method: string, params: unknown[]) {
   const response = await fetch("https://rpc.tempo.xyz", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }) });
