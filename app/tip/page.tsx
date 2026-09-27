@@ -41,7 +41,7 @@ async function receipt(provider:NonNullable<Window["ethereum"]>,hash:string){
 
 export default function TipPage(){
   const [token,setToken]=useState("USDC"); const [amount,setAmount]=useState("5");
-  const [identityType,setIdentityType]=useState<"x"|"telegram"|"wallet">("x"); const [identity,setIdentity]=useState("");
+  const [identityType,setIdentityType]=useState<"x"|"telegram">("x"); const [identity,setIdentity]=useState("");
   const [message,setMessage]=useState("Thanks for your work"); const [account,setAccount]=useState("");
   const [creating,setCreating]=useState(false); const [error,setError]=useState("");
   const selected=useMemo(()=>tokens.find(t=>t.symbol===token)??tokens[0],[token]);
@@ -71,18 +71,15 @@ export default function TipPage(){
     if(!identity.trim())return setError("Enter the recipient identity.");
     if(identityType==="x"&&!/^@?[A-Za-z0-9_]{1,15}$/.test(identity.trim()))return setError("Enter a valid X handle.");
     if(identityType==="telegram"&&!/^@?[A-Za-z0-9_]{3,32}$/.test(identity.trim()))return setError("Enter a valid Telegram username.");
-    if(identityType==="wallet"&&!/^0x[a-fA-F0-9]{40}$/.test(identity.trim()))return setError("Enter a valid wallet address.");
     try{
       setCreating(true);
-      const normalized=identityType==="wallet"?identity.trim().toLowerCase():identity.trim().replace(/^@/,"").toLowerCase();
-      const identityHash=identityType==="wallet"
-        ? keccak256(encodePacked(["address"], [identity as `0x${string}`]))
-        : keccak256(toBytes(normalized)); const amountRaw=parseUnits(amount,selected.decimals);
+      const normalized=identity.trim().replace(/^@/,"").toLowerCase();
+      const identityHash=keccak256(toBytes(normalized)); const amountRaw=parseUnits(amount,selected.decimals);
       const funding=amountRaw+amountRaw/100n+amountRaw/200n;
       const approve=encodeFunctionData({abi:erc20Abi,functionName:"approve",args:[SATOTIPS_CONTRACT as `0x${string}`,funding]});
       const ah=await window.ethereum.request({method:"eth_sendTransaction",params:[{from:account,to:selected.address,data:approve,feeToken:PATH_USD_FEE_TOKEN}]}) as string;
       await receipt(window.ethereum,ah);
-      const data=encodeFunctionData({abi,functionName:"createTip",args:[selected.address as `0x${string}`,amountRaw,0n,identityType==="x"?1:identityType==="telegram"?2:3,identityHash,message]});
+      const data=encodeFunctionData({abi,functionName:"createTip",args:[selected.address as `0x${string}`,amountRaw,0n,identityType==="x"?1:2,identityHash,message]});
       const h=await window.ethereum.request({method:"eth_sendTransaction",params:[{from:account,to:SATOTIPS_CONTRACT,data,feeToken:PATH_USD_FEE_TOKEN}]}) as string;
       const r=await receipt(window.ethereum,h); const logs=(r as {logs?:Array<{topics?:string[]}>}).logs??[];
       const log=logs.find(l=>l.topics?.[0]?.toLowerCase()===TIP_CREATED_TOPIC.toLowerCase());
@@ -95,8 +92,8 @@ export default function TipPage(){
   return <main className="claim-page"><nav className="nav"><a className="brand" href="/"><span className="brand-mark">S</span><span>SatoDrops</span></a><a className="secondary" href="/"><ArrowLeft size={15}/> Back</a></nav>
   {error&&<div className="wallet-error">{error}</div>}<section className="claim-shell"><div className="claim-card">
     <div className="eyebrow">SATODROPS · TIP</div><h1>Send a little value.</h1><p className="claim-message">Create a private, identity-restricted tip. Only the verified recipient can claim it.</p>
-    <label>Recipient identity</label><div className="token-row" style={{marginTop:10}}>{[["x","X"],["telegram","Telegram"],["wallet","Wallet"]].map(([v,l])=><button key={v} className={identityType===v?"token active":"token"} onClick={()=>setIdentityType(v as typeof identityType)}>{l}</button>)}</div>
-    <div className="input-wrap" style={{marginBottom:22}}><input value={identity} onChange={e=>setIdentity(e.target.value)} placeholder={identityType==="x"?"@username":identityType==="telegram"?"@username":"0x..."}/></div>
+    <label>Recipient identity</label><div className="token-row" style={{marginTop:10}}>{[["x","X"],["telegram","Telegram"]].map(([v,l])=><button key={v} className={identityType===v?"token active":"token"} onClick={()=>setIdentityType(v as typeof identityType)}>{l}</button>)}</div>
+    <div className="input-wrap" style={{marginBottom:22}}><input value={identity} onChange={e=>setIdentity(e.target.value)} placeholder={"@username"}/></div>
     <label>Token</label><div className="token-row" style={{marginTop:10}}>{tokens.map(t=><button key={t.symbol} className={token===t.symbol?"token active":"token"} onClick={()=>setToken(t.symbol)}>{t.symbol}</button>)}</div>
     <div className="input-wrap" style={{marginBottom:22}}><input value={amount} onChange={e=>setAmount(e.target.value)} inputMode="decimal"/><span>{token}</span></div>
     <label>Message</label><textarea value={message} onChange={e=>setMessage(e.target.value)} maxLength={120}/><div className="char-count">{message.length}/120</div>
