@@ -162,10 +162,12 @@ export default function Home() {
       const { EthereumProvider } = await import("@walletconnect/ethereum-provider");
       const walletConnectProvider = await EthereumProvider.init({
         projectId: WALLETCONNECT_PROJECT_ID,
-        chains: [TEMPO_CHAIN_ID_DECIMAL],
         optionalChains: [TEMPO_CHAIN_ID_DECIMAL],
         rpcMap: { [TEMPO_CHAIN_ID_DECIMAL]: "https://rpc.tempo.xyz" },
         showQrModal: true,
+        qrModalOptions: {
+          enableMobileFullScreen: true,
+        },
         metadata: {
           name: "SatoDrops",
           description: "Stablecoin rewards on Tempo",
