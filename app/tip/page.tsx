@@ -85,7 +85,8 @@ export default function TipPage(){
       const data=encodeFunctionData({abi,functionName:"createTip",args:[selected.address as `0x${string}`,amountRaw,0n,identityType==="x"?1:identityType==="telegram"?2:3,identityHash,message]});
       const h=await window.ethereum.request({method:"eth_sendTransaction",params:[{from:account,to:SATOTIPS_CONTRACT,data,feeToken:PATH_USD_FEE_TOKEN}]}) as string;
       const r=await receipt(window.ethereum,h); const logs=(r as {logs?:Array<{topics?:string[]}>}).logs??[];
-      const log=logs.find(l=>(l.topics?.length??0)>=2); const tipId=log?.topics?.[1]?BigInt(log.topics[1]).toString():"";
+      const log=logs.find(l=>l.topics?.[0]?.toLowerCase()===TIP_CREATED_TOPIC.toLowerCase());
+      const tipId=log?.topics?.[1]?BigInt(log.topics[1]).toString():"";
       if(!tipId)throw new Error("Tip was funded, but the new tip ID could not be read.");
       window.location.assign("/tip/claim?id="+tipId);
     }catch(e){setError(e instanceof Error?e.message:"Tip creation failed.");}finally{setCreating(false);}
