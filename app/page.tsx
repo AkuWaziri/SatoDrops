@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUpRight, Sparkles, Wallet } from "lucide-react";
-import { encodeFunctionData, formatUnits, keccak256, parseUnits, toBytes } from "viem";
+import { encodeFunctionData, formatUnits, http, keccak256, parseUnits, toBytes } from "viem";
 import { useEffect, useMemo, useState } from "react";
 import { createAppKit, useAppKit, useAppKitAccount, useAppKitProvider } from "@reown/appkit/react";
 import { defineChain } from "@reown/appkit/networks";
@@ -34,12 +34,17 @@ const TEMPO_NETWORK = defineChain({
 const wagmiAdapter = WALLETCONNECT_PROJECT_ID ? new WagmiAdapter({
   networks: [TEMPO_NETWORK],
   projectId: WALLETCONNECT_PROJECT_ID,
+  transports: {
+    [TEMPO_CHAIN_ID_DECIMAL]: http("https://rpc.tempo.xyz"),
+  },
 }) : undefined;
 
 if (WALLETCONNECT_PROJECT_ID && wagmiAdapter) {
   createAppKit({
     adapters: [wagmiAdapter],
     networks: [TEMPO_NETWORK],
+    defaultNetwork: TEMPO_NETWORK,
+    allowUnsupportedChain: false,
     projectId: WALLETCONNECT_PROJECT_ID,
     metadata: {
       name: "SatoDrops",
