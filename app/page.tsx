@@ -167,6 +167,48 @@ export default function Home() {
         showQrModal: true,
         qrModalOptions: {
           enableMobileFullScreen: true,
+          mobileWallets: [
+            {
+              id: "metamask",
+              name: "MetaMask",
+              links: {
+                native: "metamask://",
+                universal: "https://metamask.app.link",
+              },
+            },
+            {
+              id: "trust",
+              name: "Trust Wallet",
+              links: {
+                native: "trust://",
+                universal: "https://link.trustwallet.com",
+              },
+            },
+            {
+              id: "coinbase_wallet",
+              name: "Coinbase Wallet",
+              links: {
+                native: "cbwallet://",
+                universal: "https://go.cb-w.com",
+              },
+            },
+            {
+              id: "rainbow",
+              name: "Rainbow",
+              links: {
+                native: "rainbow://",
+                universal: "https://rnbwapp.com",
+              },
+            },
+            {
+              id: "okx_wallet",
+              name: "OKX Wallet",
+              links: {
+                native: "okx://",
+                universal: "https://www.okx.com",
+              },
+            },
+          ],
         },
         metadata: {
           name: "SatoDrops",
