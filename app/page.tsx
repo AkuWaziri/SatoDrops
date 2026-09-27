@@ -185,13 +185,21 @@ export default function Home() {
       let provider = activeWalletProvider;
       let current = "";
 
+      const isMobileBrowser = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
       if (!provider) {
-        const injected = await findInjectedWallet();
-        if (injected) {
-          provider = injected.provider;
-          current = injected.account;
-        } else {
+        // On normal mobile browsers there is usually no injected EVM provider.
+        // Go directly to WalletConnect so the wallet picker/deep-link opens.
+        if (isMobileBrowser) {
           provider = await createWalletConnectProvider();
+        } else {
+          const injected = await findInjectedWallet();
+          if (injected) {
+            provider = injected.provider;
+            current = injected.account;
+          } else {
+            provider = await createWalletConnectProvider();
+          }
         }
         activeWalletProvider = provider;
       }
