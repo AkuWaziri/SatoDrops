@@ -316,14 +316,16 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
       finally { setRecentDropsLoading(false); }
     };
     void loadRecentDrops();
-  }, []);
+  }, [account]);
 
   useEffect(() => {
     const provider = window.ethereum as Eip1193Provider | undefined;
     if (!provider?.on) return;
     const handleAccounts = (...args: unknown[]) => {
       const next = args[0] as string[] | undefined;
-      if (!next?.[0]) {
+      if (next?.[0]) {
+        setAccount(next[0]);
+      } else {
         setAccount("");
         setBalances({});
       }
