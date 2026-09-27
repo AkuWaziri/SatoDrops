@@ -104,7 +104,7 @@ export default function Home() {
   const [claims, setClaims] = useState("10");
   const [claimMode, setClaimMode] = useState<"public"|"wallet">("public");
   const [walletsText, setWalletsText] = useState("");
-  const [message, setMessage] = useState("Bug bounty — first valid report");
+  const [message, setMessage] = useState("Bug bounty rewards for Popo Teams");
   const [created, setCreated] = useState(false);
   const [account, setAccount] = useState("");
   const [balances, setBalances] = useState<Record<string, number>>({});
