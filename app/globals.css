@@ -84,3 +84,5 @@ button,a{touch-action:manipulation}
 
 
 .social-links{display:flex;align-items:center;gap:10px}.social-link{width:34px;height:34px;border:1px solid var(--line);border-radius:9px;display:grid;place-items:center;color:#555b60;background:#fff;transition:border-color .15s ease,color .15s ease,transform .15s ease}.social-link:hover{color:var(--ink);border-color:#bfc4bf;transform:translateY(-1px)}.x-logo{font:700 17px Arial,sans-serif;line-height:1}.social-link svg{width:16px;height:16px}@media(max-width:560px){.social-links{width:auto}.social-link{width:32px;height:32px}}
+
+.brand-logo{width:29px;height:29px;border-radius:9px;display:block;object-fit:cover}@media(max-width:380px){.brand-logo{width:26px;height:26px}}
