@@ -33,6 +33,9 @@ jobs:
         with:
           version: stable
 
+      - name: Install forge-std
+        run: forge install foundry-rs/forge-std --no-commit
+
       - name: Validate deployment configuration
         shell: bash
         run: |
