@@ -270,7 +270,7 @@ export default function Home() {
       const approveData = encodeFunctionData({
         abi: erc20Abi,
         functionName: "approve",
-        args: [SATODROPS_CONTRACT as `0x${string}`, totalFundingRaw],
+        args: [targetContract as `0x${string}`, totalFundingRaw],
       });
 
       const approvalHash = await provider.request({
