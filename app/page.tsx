@@ -87,6 +87,23 @@ const erc20Abi = [
     ],
     outputs: [{ name: "", type: "bool" }],
   },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
 const satodropsAbi = [
@@ -323,6 +340,68 @@ function HomeContent() {
       }) as string;
 
       await waitForReceipt(provider, approvalHash);
+
+      // Verify the post-approval state and simulate the exact token transfers
+      // that the FCFS contract will execute. This turns a generic contract
+      // revert into a useful balance/allowance/token-policy diagnostic.
+      if (claimMode === "public") {
+        const balanceData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [account as `0x${string}`],
+        });
+        const allowanceData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [account as `0x${string}`, targetContract as `0x${string}`],
+        });
+
+        const balanceRaw = BigInt(await provider.request({
+          method: "eth_call",
+          params: [{ to: selectedToken.address, data: balanceData }, "latest"],
+        }) as string);
+        const allowanceRaw = BigInt(await provider.request({
+          method: "eth_call",
+          params: [{ to: selectedToken.address, data: allowanceData }, "latest"],
+        }) as string);
+
+        if (balanceRaw < totalFundingRaw) {
+          throw new Error(
+            `Insufficient ${selectedToken.symbol} balance. Required ${formatUnits(totalFundingRaw, selectedToken.decimals)} ${selectedToken.symbol}; wallet has ${formatUnits(balanceRaw, selectedToken.decimals)}.`,
+          );
+        }
+        if (allowanceRaw < totalFundingRaw) {
+          throw new Error(
+            `FCFS allowance is too low after approval. Required ${formatUnits(totalFundingRaw, selectedToken.decimals)} ${selectedToken.symbol}; allowance is ${formatUnits(allowanceRaw, selectedToken.decimals)}.`,
+          );
+        }
+
+        const creationFeeRaw = rewardTotalRaw / 100n;
+        const claimFeesRaw = rewardTotalRaw / 200n;
+        const rewardAndClaimRaw = rewardTotalRaw + claimFeesRaw;
+
+        const transferFeeData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "transferFrom",
+          args: [account as `0x${string}`, targetContract as `0x${string}`, creationFeeRaw],
+        });
+        const transferRewardData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "transferFrom",
+          args: [account as `0x${string}`, targetContract as `0x${string}`, rewardAndClaimRaw],
+        });
+
+        for (const [label, data] of [
+          ["FCFS creation-fee transfer", transferFeeData],
+          ["FCFS reward funding transfer", transferRewardData],
+        ] as const) {
+          await simulateTransaction(provider, {
+            from: targetContract,
+            to: selectedToken.address,
+            data,
+          }, label);
+        }
+      }
 
       const createData = claimMode === "public"
         ? encodeFunctionData({
