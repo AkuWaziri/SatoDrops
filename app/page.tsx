@@ -66,6 +66,7 @@ if (WALLETCONNECT_PROJECT_ID && wagmiAdapter) {
 }
 
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_V2_CONTRACT_ADDRESS ?? "0x13048a5b34d182dc903871E89Db214847f8E1797";
+const SATODROPS_FCFS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_FCFS_CONTRACT_ADDRESS ?? "";
 const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 
@@ -105,6 +106,24 @@ const satodropsAbi = [
     outputs: [{ name: "dropId", type: "uint256" }],
   },
 ] as const;
+
+const fcfsAbi = [
+  {
+    type: "function",
+    name: "createDrop",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amountPerClaim", type: "uint128" },
+      { name: "maxClaims", type: "uint64" },
+      { name: "expiresAt", type: "uint64" },
+      { name: "message", type: "string" },
+    ],
+    outputs: [{ name: "dropId", type: "uint256" }],
+  },
+] as const;
+
+const FCFS_DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
 
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
@@ -208,8 +227,9 @@ export default function Home() {
       await connectWallet();
       return;
     }
-    if (!SATODROPS_CONTRACT) {
-      setWalletError("SatoDrops contract is not deployed/configured yet.");
+    const targetContract = claimMode === "public" ? SATODROPS_FCFS_CONTRACT : SATODROPS_CONTRACT;
+    if (!targetContract) {
+      setWalletError("The FCFS contract is not deployed/configured yet.");
       return;
     }
 
@@ -265,25 +285,31 @@ export default function Home() {
 
       await waitForReceipt(provider, approvalHash);
 
-      const createData = encodeFunctionData({
-        abi: satodropsAbi,
-        functionName: "createDrop",
-        args: [
-          selectedToken.address as `0x${string}`,
-          rewardPerClaim,
-          BigInt(effectiveClaims),
-          0n,
-          claimMode === "wallet",
-          (claimMode === "wallet" ? walletList : []) as `0x${string}`[],
-          message,
-        ],
-      });
+      const createData = claimMode === "public"
+        ? encodeFunctionData({
+            abi: fcfsAbi,
+            functionName: "createDrop",
+            args: [selectedToken.address as `0x${string}`, rewardPerClaim, BigInt(effectiveClaims), 0n, message],
+          })
+        : encodeFunctionData({
+            abi: satodropsAbi,
+            functionName: "createDrop",
+            args: [
+              selectedToken.address as `0x${string}`,
+              rewardPerClaim,
+              BigInt(effectiveClaims),
+              0n,
+              true,
+              walletList as `0x${string}`[],
+              message,
+            ],
+          });
 
       const createHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
           from: account,
-          to: SATODROPS_CONTRACT,
+          to: targetContract,
           data: createData,
           feeToken: PATH_USD_FEE_TOKEN,
         }],
@@ -292,8 +318,9 @@ export default function Home() {
       const createReceipt = await waitForReceipt(provider, createHash);
 
       const logs = (createReceipt as { logs?: Array<{ address?: string; topics?: string[] }> }).logs ?? [];
+      const creationTopic = claimMode === "public" ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC;
       const contractLog = logs.find(
-        (log) => log.address?.toLowerCase() === SATODROPS_CONTRACT.toLowerCase() && log.topics?.[0]?.toLowerCase() === DROP_CREATED_TOPIC.toLowerCase()
+        (log) => log.address?.toLowerCase() === targetContract.toLowerCase() && log.topics?.[0]?.toLowerCase() === creationTopic.toLowerCase()
       );
       const dropId = contractLog?.topics?.[1] ? BigInt(contractLog.topics[1]).toString() : "";
 
@@ -301,7 +328,7 @@ export default function Home() {
         throw new Error("Drop was funded, but the new drop ID could not be read from the transaction receipt.");
       }
 
-      window.location.assign(`/claim?id=${dropId}&v=2`);
+      window.location.assign(claimMode === "public" ? `/claim?id=${dropId}&v=fcfs` : `/claim?id=${dropId}&v=2`);
     } catch (error) {
       setWalletError(error instanceof Error ? error.message : "Drop creation failed.");
     } finally {
