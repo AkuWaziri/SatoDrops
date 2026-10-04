@@ -65,10 +65,10 @@ jobs:
           forge create contracts/SatoDropsFCFS.sol:SatoDropsFCFS \
             --rpc-url "${TEMPO_RPC_URL}" \
             --private-key "${DEPLOYER_PRIVATE_KEY}" \
-            --constructor-args "${SATODROPS_FEE_RECIPIENT}" "${SATODROPS_VERIFICATION_SIGNER}" \
             --broadcast \
             --legacy \
-            -vvvv
+            -vvvv \
+            --constructor-args "${SATODROPS_FEE_RECIPIENT}" "${SATODROPS_VERIFICATION_SIGNER}"
 
       - name: Deployment reminder
         run: |
