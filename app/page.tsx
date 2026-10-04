@@ -145,6 +145,13 @@ const satodropsAbi = [
 const fcfsAbi = [
   {
     type: "function",
+    name: "feeRecipient",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
     name: "createDrop",
     stateMutability: "nonpayable",
     inputs: [
