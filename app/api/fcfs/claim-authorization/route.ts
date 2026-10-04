@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
     const dropId = body.dropId?.trim();
     const wallet = body.wallet?.trim();
 
-    if (!dropId || !/^\\d+$/.test(dropId) || !wallet || !isAddress(wallet) || !body.turnstileToken) {
+    if (!dropId || !/^\d+$/.test(dropId) || !wallet || !isAddress(wallet) || !body.turnstileToken) {
       return json({ error: "Invalid claim authorization request." }, 400);
     }
 
