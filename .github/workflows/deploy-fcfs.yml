@@ -57,7 +57,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          forge script script/DeploySatoDropsFCFS.s.sol:DeploySatoDropsFCFS             --rpc-url "${TEMPO_RPC_URL}"             --private-key "${DEPLOYER_PRIVATE_KEY}"             --broadcast             --legacy             -vvvv
+          forge create contracts/SatoDropsFCFS.sol:SatoDropsFCFS             --rpc-url "${TEMPO_RPC_URL}"             --private-key "${DEPLOYER_PRIVATE_KEY}"             --constructor-args "${SATODROPS_FEE_RECIPIENT}" "${SATODROPS_VERIFICATION_SIGNER}"             --broadcast             --legacy             -vvvv
 
       - name: Deployment reminder
         run: |
