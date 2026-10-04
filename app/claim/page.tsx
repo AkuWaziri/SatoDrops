@@ -250,7 +250,7 @@ export default function ClaimPage() {
     setHistoryLoading(true);
     try {
       const logs = await getDropLogs(historyDropId, historyContract, historyDeploymentTx, fcfsMode ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC);
-      const createdLog = logs.find((log) => log.topics?.[0] === DROP_CREATED_TOPIC);
+      const createdLog = logs.find((log) => log.topics?.[0] === (fcfsMode ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC));
       if (createdLog?.transactionHash) setDropTxHash(createdLog.transactionHash);
       const claims = logs.filter((log) => log.topics?.[0] === DROP_CLAIMED_TOPIC && (log.topics?.length ?? 0) >= 3).map((log) => {
         const data = (log.data ?? "").replace(/^0x/, "");
@@ -441,12 +441,20 @@ export default function ClaimPage() {
               {drop.closed && <div className="wallet-error">This drop has been closed.</div>}
               {drop.claimed >= drop.maxClaims && <div className="wallet-error">This drop is sold out.</div>}
               {alreadyClaimed && <div className="wallet-error">This wallet has already claimed this drop.</div>}
-              {isFcfs && fcfsInactive && isCreator && (
+              {isFcfs && fcfsInactive && (
                 <div className="activation-box">
-                  <p>This drop is funded but locked. Activate it only when you are ready to publish the claim link.</p>
-                  <button className="create-btn" onClick={activate} disabled={activating}>
-                    <Wallet size={17}/>{activating ? "Activating…" : "Activate & prepare claim link"}<ArrowUpRight size={16}/>
-                  </button>
+                  <p>This drop is funded but locked. Connect the creator wallet to unlock it. Activate it only when you are ready to publish the claim link.</p>
+                  {!account ? (
+                    <button className="create-btn" onClick={connect}>
+                      <Wallet size={17}/>Connect creator wallet<ArrowUpRight size={16}/>
+                    </button>
+                  ) : isCreator ? (
+                    <button className="create-btn" onClick={activate} disabled={activating}>
+                      <Wallet size={17}/>{activating ? "Activating…" : "Activate & prepare claim link"}<ArrowUpRight size={16}/>
+                    </button>
+                  ) : (
+                    <div className="wallet-error">Connect the wallet that created this drop to activate it.</div>
+                  )}
                 </div>
               )}
               {isFcfs && !fcfsInactive && (
