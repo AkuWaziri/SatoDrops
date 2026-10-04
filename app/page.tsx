@@ -89,6 +89,17 @@ const erc20Abi = [
   },
   {
     type: "function",
+    name: "transferFrom",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "value", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
     name: "balanceOf",
     stateMutability: "view",
     inputs: [{ name: "owner", type: "address" }],
@@ -107,6 +118,13 @@ const erc20Abi = [
 ] as const;
 
 const satodropsAbi = [
+  {
+    type: "function",
+    name: "feeRecipient",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
   {
     type: "function",
     name: "createDrop",
@@ -380,10 +398,21 @@ function HomeContent() {
         const claimFeesRaw = rewardTotalRaw / 200n;
         const rewardAndClaimRaw = rewardTotalRaw + claimFeesRaw;
 
+        const feeRecipientData = encodeFunctionData({
+          abi: fcfsAbi,
+          functionName: "feeRecipient",
+          args: [],
+        });
+        const feeRecipient = String(await provider.request({
+          method: "eth_call",
+          params: [{ to: targetContract, data: feeRecipientData }, "latest"],
+        })).slice(-40);
+        const feeRecipientAddress = `0x${feeRecipient}`;
+
         const transferFeeData = encodeFunctionData({
           abi: erc20Abi,
           functionName: "transferFrom",
-          args: [account as `0x${string}`, targetContract as `0x${string}`, creationFeeRaw],
+          args: [account as `0x${string}`, feeRecipientAddress as `0x${string}`, creationFeeRaw],
         });
         const transferRewardData = encodeFunctionData({
           abi: erc20Abi,
