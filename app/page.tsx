@@ -181,6 +181,44 @@ async function readTempoRpc(method: string, params: unknown[]) {
   return body.result ?? "";
 }
 
+async function simulateCreateViaTempoRpc(
+  tx: { from: string; to: string; data: string },
+) {
+  const response = await fetch("https://rpc.tempo.xyz", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "eth_call",
+      params: [tx, "latest"],
+    }),
+  });
+
+  const body = await response.json() as {
+    result?: unknown;
+    error?: {
+      code?: number;
+      message?: string;
+      data?: unknown;
+    };
+  };
+
+  if (!response.ok || body.error) {
+    const error = body.error;
+    const details = error
+      ? JSON.stringify({
+          code: error.code,
+          message: error.message,
+          data: error.data,
+        })
+      : "HTTP " + response.status;
+    throw new Error("Tempo RPC createDrop simulation failed: " + details);
+  }
+
+  return body.result;
+}
+
 async function readTokenBalance(provider: NonNullable<Window["ethereum"]>, token: string, owner: string) {
   const selector = "0x70a08231";
   const paddedOwner = owner.slice(2).padStart(64, "0");
@@ -459,11 +497,23 @@ function HomeContent() {
             ],
           });
 
-      await simulateTransaction(provider, {
-        from: account,
-        to: targetContract,
-        data: createData,
-      }, claimMode === "public" ? "FCFS drop creation" : "Wallet-specific drop creation");
+      if (claimMode === "public") {
+        try {
+          await simulateCreateViaTempoRpc({
+            from: account,
+            to: targetContract,
+            data: createData,
+          });
+        } catch (error) {
+          throw new Error(providerErrorMessage(error));
+        }
+      } else {
+        await simulateTransaction(provider, {
+          from: account,
+          to: targetContract,
+          data: createData,
+        }, "Wallet-specific drop creation");
+      }
 
       const createHash = await provider.request({
         method: "eth_sendTransaction",
