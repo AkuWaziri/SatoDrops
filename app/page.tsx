@@ -495,6 +495,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
 export default function Home() {
   // AppKit hooks are only rendered after createAppKit has been initialized.
+  // Preview deployments receive the same public WalletConnect configuration as production.
   // This also keeps Vercel/Next.js builds from invoking AppKit hooks when the
   // public WalletConnect project id is absent from the build environment.
   if (!WALLETCONNECT_PROJECT_ID) {
