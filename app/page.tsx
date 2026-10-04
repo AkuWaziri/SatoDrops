@@ -251,7 +251,7 @@ function HomeContent() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [walletError, setWalletError] = useState("");
   const [creating, setCreating] = useState(false);
-  const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[] }>>([]);
+  const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[]; fcfs?: boolean; active?: boolean }>>([]);
   const [recentDropsLoading, setRecentDropsLoading] = useState(true);
 
   const walletList = walletsText.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
@@ -644,7 +644,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
       <section className="existing-drops">
         <div className="section-heading"><div><div className="eyebrow">YOUR ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">PRIVATE TO CONNECTED WALLET</span></div>
-        {!account ? <div className="existing-empty">Connect your wallet to view your drops.</div> : recentDropsLoading ? <div className="existing-empty">Loading your drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops created by this wallet yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id+"&v=2"} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
+        {!account ? <div className="existing-empty">Connect your wallet to view your drops.</div> : recentDropsLoading ? <div className="existing-empty">Loading your drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops created by this wallet yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; const locked=item.fcfs && !item.active; return <a className="existing-drop" href={"/claim?id="+item.id+(item.fcfs?"&v=fcfs":"&v=2")} key={(item.fcfs?"fcfs-":"standard-")+item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":locked?"LOCKED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
       </section>
 
 
@@ -677,4 +677,82 @@ export default function Home() {
     );
   }
   return <HomeContent />;
-}
+}  useEffect(() => {
+    const loadRecentDrops = async () => {
+      try {
+        if (!account) {
+          setRecentDrops([]);
+          return;
+        }
+
+        const latestRaw = await readTempoRpc("eth_blockNumber", []);
+        const latestBlock = BigInt(latestRaw as string);
+        const maxRange = 100000n;
+        const fromBlock = latestBlock > maxRange ? latestBlock - maxRange + 1n : 0n;
+        const wallet = account.toLowerCase();
+
+        const loadContractDrops = async (contract: string, topic: string, fcfs: boolean) => {
+          if (!contract) return [];
+          const raw = await readTempoRpc("eth_getLogs", [{
+            address: contract,
+            fromBlock: "0x" + fromBlock.toString(16),
+            toBlock: "0x" + latestBlock.toString(16),
+            topics: [topic],
+          }]);
+          const logs = raw as unknown as Array<{ topics?: string[]; transactionHash?: string }>;
+          const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowerCase() === wallet.slice(2));
+          const ids = ownedLogs.map((log) => log.topics?.[1] ? BigInt(log.topics[1]).toString() : "").filter(Boolean).slice(-10).reverse();
+          const loaded = [];
+
+          for (const id of ids) {
+            const creationLog = ownedLogs.find((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id);
+            const data = await readTempoRpc("eth_call", [{
+              to: contract,
+              data: encodeFunctionData({
+                abi: [{
+                  type:"function", name:"drops", stateMutability:"view",
+                  inputs:[{name:"dropId",type:"uint256"}],
+                  outputs: fcfs
+                    ? [{name:"creator",type:"address"},{name:"token",type:"address"},{name:"amountPerClaim",type:"uint128"},{name:"maxClaims",type:"uint64"},{name:"claimed",type:"uint64"},{name:"expiresAt",type:"uint64"},{name:"active",type:"bool"},{name:"closed",type:"bool"},{name:"message",type:"string"}]
+                    : [{name:"creator",type:"address"},{name:"token",type:"address"},{name:"amountPerClaim",type:"uint128"},{name:"maxClaims",type:"uint64"},{name:"claimed",type:"uint64"},{name:"expiresAt",type:"uint64"},{name:"closed",type:"bool"},{name:"message",type:"string"}],
+                }] as const,
+                functionName:"drops",
+                args:[BigInt(id)],
+              }),
+            }, "latest"]);
+            const hex = String(data).replace(/^0x/, "");
+            const word = (i:number) => hex.slice(i*64,(i+1)*64);
+            const tokenAddress = "0x" + word(1).slice(24);
+            const tokenInfo = tokens.find((t) => t.address.toLowerCase() === tokenAddress.toLowerCase());
+            if (!tokenInfo) continue;
+
+            loaded.push({
+              id,
+              creator:"0x"+word(0).slice(24),
+              token:tokenInfo,
+              amountPerClaim:BigInt("0x"+word(2)),
+              maxClaims:BigInt("0x"+word(3)),
+              claimed:BigInt("0x"+word(4)),
+              creationTx:creationLog?.transactionHash ?? "",
+              claimTxs:[],
+              fcfs,
+              active: fcfs ? BigInt("0x"+word(6)) !== 0n : true,
+            });
+          }
+          return loaded;
+        };
+
+        const [standardDrops, fcfsDrops] = await Promise.all([
+          loadContractDrops(SATODROPS_CONTRACT, DROP_CREATED_TOPIC, false),
+          loadContractDrops(SATODROPS_FCFS_CONTRACT, FCFS_DROP_CREATED_TOPIC, true),
+        ]);
+
+        setRecentDrops([...fcfsDrops, ...standardDrops].slice(0, 10));
+      } catch (error) {
+        console.error("Could not load existing drops", error);
+      } finally {
+        setRecentDropsLoading(false);
+      }
+    };
+    void loadRecentDrops();
+  }, [account]);
