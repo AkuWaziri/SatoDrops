@@ -164,7 +164,7 @@ async function waitForReceipt(provider: NonNullable<Window["ethereum"]>, hash: s
   throw new Error("Transaction confirmation timed out. Check the transaction on Tempo Explorer.");
 }
 
-export default function Home() {
+function HomeContent() {
   const [token, setToken] = useState("USDC");
   const [amount, setAmount] = useState("5");
   const [claims, setClaims] = useState("10");
@@ -491,4 +491,27 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
       <footer><div className="brand"><img className="brand-logo" src="/satodrops-logo.svg" alt="SatoDrops" /><span>SatoDrops</span></div><span>Stablecoins programmable rewards, powered by Tempo.</span><div className="social-links"><a className="social-link" href="https://x.com/Satodrops" target="_blank" rel="noreferrer" aria-label="SatoDrops on X" title="SatoDrops on X"><span className="x-logo">𝕏</span></a><a className="social-link" href="#" aria-label="SatoDrops on Telegram" title="Telegram"><Send size={16}/></a></div><a href="https://tempo.xyz" target="_blank" rel="noreferrer">Built for Tempo <ArrowUpRight size={14}/></a></footer>
     </main>
   );
+}
+
+export default function Home() {
+  // AppKit hooks are only rendered after createAppKit has been initialized.
+  // This also keeps Vercel/Next.js builds from invoking AppKit hooks when the
+  // public WalletConnect project id is absent from the build environment.
+  if (!WALLETCONNECT_PROJECT_ID) {
+    return (
+      <main>
+        <nav className="nav">
+          <div className="brand"><img className="brand-logo" src="/satodrops-logo.svg" alt="SatoDrops" /><span>SatoDrops</span></div>
+        </nav>
+        <section className="hero">
+          <div className="hero-copy">
+            <div className="eyebrow"><span className="live-dot"/> POWERED BY TEMPO</div>
+            <h1>Stablecoins rewards.<br/><span>Instantly claimable.</span></h1>
+            <p className="hero-text">Wallet connection is temporarily unavailable because the WalletConnect project ID is not configured.</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+  return <HomeContent />;
 }
