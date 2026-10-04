@@ -246,10 +246,10 @@ export default function ClaimPage() {
 
   const token = useMemo(() => drop ? tokens[drop.token.toLowerCase()] : undefined, [drop]);
 
-  async function loadHistory(historyDropId: string, historyContract = contractAddress, historyDeploymentTx = deploymentTx) {
+  async function loadHistory(historyDropId: string, historyContract = contractAddress, historyDeploymentTx = deploymentTx, fcfsMode = isFcfs) {
     setHistoryLoading(true);
     try {
-      const logs = await getDropLogs(historyDropId, historyContract, historyDeploymentTx, isFcfs ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC);
+      const logs = await getDropLogs(historyDropId, historyContract, historyDeploymentTx, fcfsMode ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC);
       const createdLog = logs.find((log) => log.topics?.[0] === DROP_CREATED_TOPIC);
       if (createdLog?.transactionHash) setDropTxHash(createdLog.transactionHash);
       const claims = logs.filter((log) => log.topics?.[0] === DROP_CLAIMED_TOPIC && (log.topics?.length ?? 0) >= 3).map((log) => {
@@ -285,7 +285,7 @@ export default function ClaimPage() {
           data: encodeFunctionData({ abi: fcfs ? fcfsAbi : abi, functionName: "drops", args: [BigInt(id)] }),
         }, "latest"]);
         setDrop(fcfs ? decodeFcfsDropResult(data) : decodeDropResult(data));
-        await loadHistory(id, selectedContract, selectedDeploymentTx);
+        await loadHistory(id, selectedContract, selectedDeploymentTx, fcfs);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load this drop.");
       } finally {
