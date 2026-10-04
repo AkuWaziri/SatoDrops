@@ -41,17 +41,7 @@ contract SatoDropsFCFS {
     mapping(uint256 => mapping(address => bool)) public hasClaimed;
     mapping(uint256 => mapping(address => uint256)) public claimNonces;
 
-    event DropCreated(
-        uint256 indexed dropId,
-        address indexed creator,
-        address indexed token,
-        uint256 amountPerClaim,
-        uint256 maxClaims,
-        uint256 expiresAt,
-        uint256 rewardTotal,
-        uint256 creationFee,
-        uint256 claimFeesReserved
-    );
+    event DropCreated(uint256 indexed dropId,address indexed creator,address indexed token,uint256 amountPerClaim,uint256 maxClaims,uint256 expiresAt,uint256 rewardTotal,uint256 creationFee,uint256 claimFeesReserved);
     event DropActivated(uint256 indexed dropId, uint256 activatedAt);
     event DropClaimed(uint256 indexed dropId, address indexed claimant, uint256 reward, uint256 claimFee);
     event DropClosed(uint256 indexed dropId, uint256 refunded);
@@ -94,13 +84,9 @@ contract SatoDropsFCFS {
         );
     }
 
-    function createDrop(
-        address token,
-        uint128 amountPerClaim,
-        uint64 maxClaims,
-        uint64 expiresAt,
-        string calldata message
-    ) external nonReentrant returns (uint256 dropId) {
+    function createDrop(address token,uint128 amountPerClaim,uint64 maxClaims,uint64 expiresAt,string calldata message)
+        external nonReentrant returns (uint256 dropId)
+    {
         if (token == address(0)) revert InvalidToken();
         if (amountPerClaim == 0) revert InvalidAmount();
         if (maxClaims == 0) revert InvalidClaims();
@@ -110,11 +96,6 @@ contract SatoDropsFCFS {
         uint256 creationFee = (rewardTotal * CREATION_FEE_BPS) / 10_000;
         uint256 claimFeesReserved = (rewardTotal * CLAIM_FEE_BPS) / 10_000;
 
-        // Pull the complete funding amount in one allowance-consuming transfer.
-        // Then split the creation fee from the contract balance. This avoids
-        // relying on two sequential transferFrom allowance mutations inside
-        // the same transaction, which some TIP-20 implementations simulate
-        // differently from standard ERC-20 tokens.
         _safeTransferFrom(token, msg.sender, address(this), rewardTotal + creationFee + claimFeesReserved);
         if (creationFee > 0) _safeTransfer(token, feeRecipient, creationFee);
 
@@ -131,21 +112,9 @@ contract SatoDropsFCFS {
             message: message
         });
 
-        emit DropCreated(
-            dropId,
-            msg.sender,
-            token,
-            amountPerClaim,
-            maxClaims,
-            expiresAt,
-            rewardTotal,
-            creationFee,
-            claimFeesReserved
-        );
+        emit DropCreated(dropId,msg.sender,token,amountPerClaim,maxClaims,expiresAt,rewardTotal,creationFee,claimFeesReserved);
     }
 
-    /// @notice Makes a drop claimable. This is deliberately separate from creation
-    /// so an onchain observer cannot claim before the creator publishes the link.
     function activateDrop(uint256 dropId) external {
         Drop storage drop = drops[dropId];
         if (drop.creator == address(0)) revert InvalidAmount();
@@ -153,18 +122,12 @@ contract SatoDropsFCFS {
         if (drop.closed) revert Closed();
         if (drop.active) return;
         if (drop.expiresAt != 0 && block.timestamp >= drop.expiresAt) revert Expired();
-
         drop.active = true;
         emit DropActivated(dropId, block.timestamp);
     }
 
-    function claim(
-        uint256 dropId,
-        uint256 deadline,
-        bytes calldata signature
-    ) external nonReentrant {
+    function claim(uint256 dropId,uint256 deadline,bytes calldata signature) external nonReentrant {
         Drop storage drop = drops[dropId];
-
         if (drop.creator == address(0)) revert InvalidAmount();
         if (!drop.active) revert NotActive();
         if (drop.closed) revert Closed();
@@ -174,16 +137,9 @@ contract SatoDropsFCFS {
         if (deadline < block.timestamp) revert AuthorizationExpired();
 
         uint256 nonce = claimNonces[dropId][msg.sender];
-        bytes32 structHash = keccak256(
-            abi.encode(CLAIM_TYPEHASH, dropId, msg.sender, nonce, deadline)
-        );
-        bytes32 digest = keccak256(
-            abi.encodePacked("\x19\x01", DOMAIN_SEPARATOR, structHash)
-        );
-
-        if (_recover(digest, signature) != verificationSigner) {
-            revert InvalidSignature();
-        }
+        bytes32 structHash = keccak256(abi.encode(CLAIM_TYPEHASH,dropId,msg.sender,nonce,deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01",DOMAIN_SEPARATOR,structHash));
+        if (_recover(digest,signature) != verificationSigner) revert InvalidSignature();
 
         claimNonces[dropId][msg.sender] = nonce + 1;
         hasClaimed[dropId][msg.sender] = true;
@@ -191,11 +147,10 @@ contract SatoDropsFCFS {
 
         uint256 reward = uint256(drop.amountPerClaim);
         uint256 claimFee = (reward * CLAIM_FEE_BPS) / 10_000;
+        _safeTransfer(drop.token,msg.sender,reward);
+        _safeTransfer(drop.token,feeRecipient,claimFee);
 
-        _safeTransfer(drop.token, msg.sender, reward);
-        _safeTransfer(drop.token, feeRecipient, claimFee);
-
-        emit DropClaimed(dropId, msg.sender, reward, claimFee);
+        emit DropClaimed(dropId,msg.sender,reward,claimFee);
     }
 
     function closeExpiredDrop(uint256 dropId) external nonReentrant {
@@ -206,22 +161,16 @@ contract SatoDropsFCFS {
         if (drop.expiresAt == 0 || block.timestamp < drop.expiresAt) revert Expired();
 
         drop.closed = true;
-
         uint256 remainingClaims = uint256(drop.maxClaims) - uint256(drop.claimed);
         uint256 remainingRewards = uint256(drop.amountPerClaim) * remainingClaims;
         uint256 remainingClaimFees = (remainingRewards * CLAIM_FEE_BPS) / 10_000;
         uint256 refund = remainingRewards + remainingClaimFees;
-
-        if (refund > 0) _safeTransfer(drop.token, drop.creator, refund);
-        emit DropClosed(dropId, refund);
+        if (refund > 0) _safeTransfer(drop.token,drop.creator,refund);
+        emit DropClosed(dropId,refund);
     }
 
-    /// @notice Allows the deployment owner/operator to rotate the backend signer.
-    /// This function is intentionally omitted here until an explicit ownership
-    /// mechanism is selected; signer rotation should not be added casually.
     function _recover(bytes32 digest, bytes calldata signature) private pure returns (address) {
         if (signature.length != 65) return address(0);
-
         bytes32 r;
         bytes32 s;
         uint8 v;
@@ -230,33 +179,28 @@ contract SatoDropsFCFS {
             s := calldataload(add(signature.offset, 32))
             v := byte(0, calldataload(add(signature.offset, 64)))
         }
-
         if (v < 27) v += 27;
         if (v != 27 && v != 28) return address(0);
-
-        // secp256k1n / 2, enforcing the canonical low-s form.
-        if (uint256(s) > 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0) {
-            return address(0);
-        }
-
-        return ecrecover(digest, v, r, s);
+        if (uint256(s) > 0x7fffffffffffffffffffffffffffffff5d576e7357a4501ddfe92f46681b20a0) return address(0);
+        return ecrecover(digest,v,r,s);
     }
 
-    function _safeTransfer(address token, address to, uint256 value) private {
-        (bool success, bytes memory data) = token.call(
-            abi.encodeWithSelector(IERC20.transfer.selector, to, value)
-        );
-        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
-            revert TransferFailed();
-        }
+    function _safeTransfer(address token,address to,uint256 value) private {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transfer.selector,to,value));
+        if (!success) _bubble(data);
+        if (data.length != 0 && !abi.decode(data,(bool))) revert TransferFailed();
     }
 
-    function _safeTransferFrom(address token, address from, address to, uint256 value) private {
-        (bool success, bytes memory data) = token.call(
-            abi.encodeWithSelector(IERC20.transferFrom.selector, from, to, value)
-        );
-        if (!success || (data.length != 0 && !abi.decode(data, (bool)))) {
-            revert TransferFailed();
+    function _safeTransferFrom(address token,address from,address to,uint256 value) private {
+        (bool success, bytes memory data) = token.call(abi.encodeWithSelector(IERC20.transferFrom.selector,from,to,value));
+        if (!success) _bubble(data);
+        if (data.length != 0 && !abi.decode(data,(bool))) revert TransferFailed();
+    }
+
+    function _bubble(bytes memory data) private pure {
+        if (data.length == 0) revert TransferFailed();
+        assembly {
+            revert(add(data,32),mload(data))
         }
     }
 }
