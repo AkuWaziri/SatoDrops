@@ -110,8 +110,13 @@ contract SatoDropsFCFS {
         uint256 creationFee = (rewardTotal * CREATION_FEE_BPS) / 10_000;
         uint256 claimFeesReserved = (rewardTotal * CLAIM_FEE_BPS) / 10_000;
 
-        _safeTransferFrom(token, msg.sender, feeRecipient, creationFee);
-        _safeTransferFrom(token, msg.sender, address(this), rewardTotal + claimFeesReserved);
+        // Pull the complete funding amount in one allowance-consuming transfer.
+        // Then split the creation fee from the contract balance. This avoids
+        // relying on two sequential transferFrom allowance mutations inside
+        // the same transaction, which some TIP-20 implementations simulate
+        // differently from standard ERC-20 tokens.
+        _safeTransferFrom(token, msg.sender, address(this), rewardTotal + creationFee + claimFeesReserved);
+        if (creationFee > 0) _safeTransfer(token, feeRecipient, creationFee);
 
         dropId = nextDropId++;
         drops[dropId] = Drop({
