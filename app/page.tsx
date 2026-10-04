@@ -164,6 +164,39 @@ async function waitForReceipt(provider: NonNullable<Window["ethereum"]>, hash: s
   throw new Error("Transaction confirmation timed out. Check the transaction on Tempo Explorer.");
 }
 
+function providerErrorMessage(error: unknown): string {
+  const value = error as { message?: string; shortMessage?: string; details?: string; data?: unknown; cause?: unknown };
+  const parts: string[] = [];
+  for (const item of [value?.shortMessage, value?.message, value?.details]) {
+    if (typeof item === "string" && item.trim() && !parts.includes(item.trim())) parts.push(item.trim());
+  }
+  if (value?.data) {
+    const data = typeof value.data === "string" ? value.data : JSON.stringify(value.data);
+    if (data && !parts.some((part) => part.includes(data))) parts.push(`RPC data: ${data}`);
+  }
+  if (value?.cause && typeof value.cause === "object") {
+    const cause = providerErrorMessage(value.cause);
+    if (cause && !parts.includes(cause)) parts.push(cause);
+  }
+  return parts.join(" | ") || (error instanceof Error ? error.message : "Drop creation failed.");
+}
+
+async function simulateTransaction(
+  provider: Eip1193Provider,
+  tx: { from: string; to: string; data: string },
+  label: string,
+) {
+  try {
+    await provider.request({
+      method: "eth_call",
+      params: [tx, "latest"],
+    });
+  } catch (error) {
+    throw new Error(`${label} simulation failed: ${providerErrorMessage(error)}`);
+  }
+}
+
+
 function HomeContent() {
   const [token, setToken] = useState("USDC");
   const [amount, setAmount] = useState("5");
@@ -273,6 +306,12 @@ function HomeContent() {
         args: [targetContract as `0x${string}`, totalFundingRaw],
       });
 
+      await simulateTransaction(provider, {
+        from: account,
+        to: selectedToken.address,
+        data: approveData,
+      }, "Token approval");
+
       const approvalHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
@@ -305,6 +344,12 @@ function HomeContent() {
             ],
           });
 
+      await simulateTransaction(provider, {
+        from: account,
+        to: targetContract,
+        data: createData,
+      }, claimMode === "public" ? "FCFS drop creation" : "Wallet-specific drop creation");
+
       const createHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
@@ -330,7 +375,7 @@ function HomeContent() {
 
       window.location.assign(claimMode === "public" ? `/claim?id=${dropId}&v=fcfs` : `/claim?id=${dropId}&v=2`);
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : "Drop creation failed.");
+      setWalletError(providerErrorMessage(error));
     } finally {
       setCreating(false);
     }
