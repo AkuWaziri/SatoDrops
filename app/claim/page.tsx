@@ -468,7 +468,7 @@ export default function ClaimPage() {
               {account && !walletAllowed && <div className="wallet-error">This wallet is not on the approved list for this drop.</div>}
               {successHash && <div className="success-box">Claim confirmed on Tempo · <a href={explorerLink} target="_blank" rel="noreferrer">View transaction</a></div>}
               <button className="create-btn" onClick={unavailable || alreadyClaimed ? undefined : claim} disabled={claiming || unavailable || alreadyClaimed || (isFcfs && !humanToken)}>
-                <Wallet size={17}/>{claiming ? "Waiting for wallet…" : fcfsInactive ? "Drop is locked" : account ? `Claim ${formatUnits(drop.amountPerClaim, token?.decimals ?? 6)} ${token?.symbol ?? ""}` : "Connect wallet to claim"}
+                <Wallet size={17}/>{claiming ? "Waiting for wallet…" : fcfsInactive ? "Drop is locked" : alreadyClaimed ? "Claim completed" : account ? `Claim ${formatUnits(drop.amountPerClaim, token?.decimals ?? 6)} ${token?.symbol ?? ""}` : "Connect wallet to claim"}
                 {!claiming && <ArrowUpRight size={16}/>}
               </button>
               {account && <div className="claim-wallet">Connected {shortAddress(account)}</div>}
