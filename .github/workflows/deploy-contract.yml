@@ -2,6 +2,9 @@ name: Deploy SatoDrops Contract
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
   deploy:
