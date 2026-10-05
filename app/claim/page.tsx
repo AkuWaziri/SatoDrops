@@ -3,6 +3,7 @@
 import { ArrowUpRight, RefreshCw, Wallet } from "lucide-react";
 import { encodeFunctionData, formatUnits, keccak256, toBytes } from "viem";
 import { useEffect, useMemo, useState } from "react";
+import FcfsTurnstile from "../../components/FcfsTurnstile";
 
 declare global {
   interface Window {
@@ -16,10 +17,12 @@ const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_RPC = "https://rpc.tempo.xyz";
 const EXPLORER = "https://explore.tempo.xyz";
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_V2_CONTRACT_ADDRESS ?? "0x13048a5b34d182dc903871E89Db214847f8E1797";
+const SATODROPS_FCFS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_FCFS_CONTRACT_ADDRESS ?? "";
 const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256,bool,uint256)"));
 const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
+const FCFS_DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
 const LEGACY_DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
 const CURRENT_DEPLOYMENT_TX = process.env.NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX ?? "0x84c090a6be1aae7d07290e856427e58eb691b012581c64056e671de9e3d7ef23";
 
@@ -72,6 +75,51 @@ const abi = [
   },
 ] as const;
 
+const fcfsAbi = [
+  {
+    type: "function",
+    name: "drops",
+    stateMutability: "view",
+    inputs: [{ name: "dropId", type: "uint256" }],
+    outputs: [
+      { name: "creator", type: "address" },
+      { name: "token", type: "address" },
+      { name: "amountPerClaim", type: "uint128" },
+      { name: "maxClaims", type: "uint64" },
+      { name: "claimed", type: "uint64" },
+      { name: "expiresAt", type: "uint64" },
+      { name: "active", type: "bool" },
+      { name: "closed", type: "bool" },
+      { name: "message", type: "string" },
+    ],
+  },
+  {
+    type: "function",
+    name: "hasClaimed",
+    stateMutability: "view",
+    inputs: [{ name: "dropId", type: "uint256" }, { name: "claimant", type: "address" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "activateDrop",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "dropId", type: "uint256" }],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "claim",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "dropId", type: "uint256" },
+      { name: "deadline", type: "uint256" },
+      { name: "signature", type: "bytes" },
+    ],
+    outputs: [],
+  },
+] as const;
+
 async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   const response = await fetch(TEMPO_RPC, {
     method: "POST",
@@ -84,7 +132,7 @@ async function rpc<T>(method: string, params: unknown[]): Promise<T> {
   return body.result as T;
 }
 
-async function getDropLogs(dropId: string, contractAddress: string, deploymentTx: string) {
+async function getDropLogs(dropId: string, contractAddress: string, deploymentTx: string, createdTopic = DROP_CREATED_TOPIC) {
   const paddedId = BigInt(dropId).toString(16).padStart(64, "0");
   let fromBlock: bigint;
   if (deploymentTx) {
@@ -110,7 +158,7 @@ async function getDropLogs(dropId: string, contractAddress: string, deploymentTx
         jsonrpc: "2.0",
         id: 1,
         method: "eth_getLogs",
-        params: [{ address: contractAddress, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16), topics: [[DROP_CREATED_TOPIC, DROP_CLAIMED_TOPIC], "0x" + paddedId] }],
+        params: [{ address: contractAddress, fromBlock: "0x" + start.toString(16), toBlock: "0x" + end.toString(16), topics: [[createdTopic, DROP_CLAIMED_TOPIC], "0x" + paddedId] }],
       }),
     });
     if (!response.ok) throw new Error("Tempo RPC request failed.");
@@ -157,10 +205,30 @@ function decodeDropResult(raw: string) {
   return { creator, token, amountPerClaim, maxClaims, claimed, expiresAt, closed, message };
 }
 
+function decodeFcfsDropResult(raw: string) {
+  const hex = raw.startsWith("0x") ? raw.slice(2) : raw;
+  const word = (index: number) => hex.slice(index * 64, (index + 1) * 64);
+  const creator = `0x${word(0).slice(24)}`;
+  const token = `0x${word(1).slice(24)}`;
+  const amountPerClaim = BigInt(`0x${word(2)}`);
+  const maxClaims = BigInt(`0x${word(3)}`);
+  const claimed = BigInt(`0x${word(4)}`);
+  const expiresAt = BigInt(`0x${word(5)}`);
+  const active = BigInt(`0x${word(6)}`) !== 0n;
+  const closed = BigInt(`0x${word(7)}`) !== 0n;
+  const messageOffset = Number(BigInt(`0x${word(8)}`));
+  const messageBase = messageOffset * 2;
+  const messageLength = Number(BigInt(`0x${hex.slice(messageBase, messageBase + 64)}`));
+  const messageHex = hex.slice(messageBase + 64, messageBase + 64 + messageLength * 2);
+  const bytes = new Uint8Array(messageHex.match(/.{1,2}/g)?.map((b) => parseInt(b, 16)) ?? []);
+  const message = new TextDecoder().decode(bytes);
+  return { creator, token, amountPerClaim, maxClaims, claimed, expiresAt, active, closed, message };
+}
+
 export default function ClaimPage() {
   const [account, setAccount] = useState("");
   const [dropId, setDropId] = useState("");
-  const [drop, setDrop] = useState<ReturnType<typeof decodeDropResult> | null>(null);
+  const [drop, setDrop] = useState<(ReturnType<typeof decodeDropResult> | ReturnType<typeof decodeFcfsDropResult>) | null>(null);
   const [alreadyClaimed, setAlreadyClaimed] = useState(false);
   const [walletAllowed, setWalletAllowed] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -172,14 +240,17 @@ export default function ClaimPage() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [contractAddress, setContractAddress] = useState("");
   const [deploymentTx, setDeploymentTx] = useState("");
+  const [isFcfs, setIsFcfs] = useState(false);
+  const [humanToken, setHumanToken] = useState("");
+  const [activating, setActivating] = useState(false);
 
   const token = useMemo(() => drop ? tokens[drop.token.toLowerCase()] : undefined, [drop]);
 
-  async function loadHistory(historyDropId: string, historyContract = contractAddress, historyDeploymentTx = deploymentTx) {
+  async function loadHistory(historyDropId: string, historyContract = contractAddress, historyDeploymentTx = deploymentTx, fcfsMode = isFcfs) {
     setHistoryLoading(true);
     try {
-      const logs = await getDropLogs(historyDropId, historyContract, historyDeploymentTx);
-      const createdLog = logs.find((log) => log.topics?.[0] === DROP_CREATED_TOPIC);
+      const logs = await getDropLogs(historyDropId, historyContract, historyDeploymentTx, fcfsMode ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC);
+      const createdLog = logs.find((log) => log.topics?.[0] === (fcfsMode ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC));
       if (createdLog?.transactionHash) setDropTxHash(createdLog.transactionHash);
       const claims = logs.filter((log) => log.topics?.[0] === DROP_CLAIMED_TOPIC && (log.topics?.length ?? 0) >= 3).map((log) => {
         const data = (log.data ?? "").replace(/^0x/, "");
@@ -195,13 +266,15 @@ export default function ClaimPage() {
     const params = new URLSearchParams(window.location.search);
     const id = params.get("id") ?? "";
     const isCurrent = params.get("v") === "2";
-    const selectedContract = isCurrent ? SATODROPS_CONTRACT : SATODROPS_LEGACY_CONTRACT;
-    const selectedDeploymentTx = isCurrent ? CURRENT_DEPLOYMENT_TX : LEGACY_DEPLOYMENT_TX;
+    const fcfs = params.get("v") === "fcfs";
+    const selectedContract = fcfs ? SATODROPS_FCFS_CONTRACT : (isCurrent ? SATODROPS_CONTRACT : SATODROPS_LEGACY_CONTRACT);
+    const selectedDeploymentTx = fcfs ? "" : (isCurrent ? CURRENT_DEPLOYMENT_TX : LEGACY_DEPLOYMENT_TX);
+    setIsFcfs(fcfs);
     setDropId(id);
     setContractAddress(selectedContract);
     setDeploymentTx(selectedDeploymentTx);
     if (!selectedContract || !id || !/^\d+$/.test(id)) {
-      setError(!SATODROPS_CONTRACT ? "SatoDrops contract is not configured yet." : "Invalid claim link.");
+      setError(!selectedContract ? "SatoDrops contract is not configured yet." : "Invalid claim link.");
       setLoading(false);
       return;
     }
@@ -209,10 +282,10 @@ export default function ClaimPage() {
       try {
         const data = await rpc<string>("eth_call", [{
           to: selectedContract,
-          data: encodeFunctionData({ abi, functionName: "drops", args: [BigInt(id)] }),
+          data: encodeFunctionData({ abi: fcfs ? fcfsAbi : abi, functionName: "drops", args: [BigInt(id)] }),
         }, "latest"]);
-        setDrop(decodeDropResult(data));
-        await loadHistory(id, selectedContract, selectedDeploymentTx);
+        setDrop(fcfs ? decodeFcfsDropResult(data) : decodeDropResult(data));
+        await loadHistory(id, selectedContract, selectedDeploymentTx, fcfs);
       } catch (e) {
         setError(e instanceof Error ? e.message : "Could not load this drop.");
       } finally {
@@ -250,11 +323,40 @@ export default function ClaimPage() {
       const data = encodeFunctionData({ abi, functionName: "hasClaimed", args: [BigInt(dropId), current as `0x${string}`] });
       const raw = await rpc<string>("eth_call", [{ to: contractAddress, data }, "latest"]);
       setAlreadyClaimed(BigInt(raw) !== 0n);
-      const allowedData = encodeFunctionData({ abi, functionName: "isAllowedClaimant", args: [BigInt(dropId), current as `0x${string}`] });
-      const allowedRaw = await rpc<string>("eth_call", [{ to: contractAddress, data: allowedData }, "latest"]);
-      setWalletAllowed(BigInt(allowedRaw) !== 0n);
+      if (isFcfs) {
+        setWalletAllowed(true);
+      } else {
+        const allowedData = encodeFunctionData({ abi, functionName: "isAllowedClaimant", args: [BigInt(dropId), current as `0x${string}`] });
+        const allowedRaw = await rpc<string>("eth_call", [{ to: contractAddress, data: allowedData }, "latest"]);
+        setWalletAllowed(BigInt(allowedRaw) !== 0n);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Wallet connection failed.");
+    }
+  }
+
+  async function activate() {
+    setError("");
+    if (!isFcfs || !dropId || !drop) return;
+    if (!account) return connect();
+    if (account.toLowerCase() !== drop.creator.toLowerCase()) {
+      setError("Only the drop creator can activate this drop.");
+      return;
+    }
+    if (!window.ethereum) return setError("No EVM wallet detected.");
+    try {
+      setActivating(true);
+      const data = encodeFunctionData({ abi: fcfsAbi, functionName: "activateDrop", args: [BigInt(dropId)] });
+      const hash = await window.ethereum.request({
+        method: "eth_sendTransaction",
+        params: [{ from: account, to: contractAddress, data, feeToken: PATH_USD_FEE_TOKEN }],
+      }) as string;
+      await waitForReceipt(hash);
+      setDrop((current) => current && "active" in current ? { ...current, active: true } : current);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Activation failed.");
+    } finally {
+      setActivating(false);
     }
   }
 
@@ -270,7 +372,28 @@ export default function ClaimPage() {
     if (!walletAllowed) return setError("This wallet is not on the approved list for this drop.");
     try {
       setClaiming(true);
-      const data = encodeFunctionData({ abi, functionName: "claim", args: [BigInt(dropId)] });
+      let data: string;
+      if (isFcfs) {
+        if (!humanToken) {
+          throw new Error("Complete the human verification first.");
+        }
+        const response = await fetch("/api/fcfs/claim-authorization", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ dropId, wallet: account, turnstileToken: humanToken }),
+        });
+        const authorization = await response.json() as { error?: string; deadline?: string; signature?: string };
+        if (!response.ok || !authorization.deadline || !authorization.signature) {
+          throw new Error(authorization.error ?? "Human verification could not authorize this claim.");
+        }
+        data = encodeFunctionData({
+          abi: fcfsAbi,
+          functionName: "claim",
+          args: [BigInt(dropId), BigInt(authorization.deadline), authorization.signature as `0x${string}`],
+        });
+      } else {
+        data = encodeFunctionData({ abi, functionName: "claim", args: [BigInt(dropId)] });
+      }
       const hash = await window.ethereum.request({ method: "eth_sendTransaction", params: [{ from: account, to: contractAddress, data, feeToken: PATH_USD_FEE_TOKEN }] }) as string;
       await waitForReceipt(hash);
       setSuccessHash(hash);
@@ -285,7 +408,9 @@ export default function ClaimPage() {
   }
 
   const expired = !!drop && drop.expiresAt !== 0n && BigInt(Math.floor(Date.now() / 1000)) >= drop.expiresAt;
-  const unavailable = !!drop && (drop.closed || expired || drop.claimed >= drop.maxClaims);
+  const fcfsInactive = isFcfs && !!drop && "active" in drop && !drop.active;
+  const isCreator = !!drop && !!account && account.toLowerCase() === drop.creator.toLowerCase();
+  const unavailable = !!drop && (fcfsInactive || drop.closed || expired || drop.claimed >= drop.maxClaims);
   const explorerLink = successHash ? `${EXPLORER}/tx/${successHash}` : "";
   const dropExplorerLink = dropTxHash ? `${EXPLORER}/tx/${dropTxHash}` : "";
   const claimsRemaining = drop ? drop.maxClaims - drop.claimed : 0n;
@@ -316,10 +441,34 @@ export default function ClaimPage() {
               {drop.closed && <div className="wallet-error">This drop has been closed.</div>}
               {drop.claimed >= drop.maxClaims && <div className="wallet-error">This drop is sold out.</div>}
               {alreadyClaimed && <div className="wallet-error">This wallet has already claimed this drop.</div>}
+              {isFcfs && fcfsInactive && (
+                <div className="activation-box">
+                  <p>This drop is funded but locked. Connect the creator wallet to unlock it. Activate it only when you are ready to publish the claim link.</p>
+                  {!account ? (
+                    <button className="create-btn" onClick={connect}>
+                      <Wallet size={17}/>Connect creator wallet<ArrowUpRight size={16}/>
+                    </button>
+                  ) : isCreator ? (
+                    <button className="create-btn" onClick={activate} disabled={activating}>
+                      <Wallet size={17}/>{activating ? "Activating…" : "Activate & prepare claim link"}<ArrowUpRight size={16}/>
+                    </button>
+                  ) : (
+                    <div className="wallet-error">Connect the wallet that created this drop to activate it.</div>
+                  )}
+                </div>
+              )}
+              {isFcfs && !fcfsInactive && (
+                <div className="human-check">
+                  <div className="summary-label">HUMAN VERIFICATION</div>
+                  <p>Complete verification before requesting a one-time claim authorization.</p>
+                  <FcfsTurnstile onToken={setHumanToken} />
+                </div>
+              )}
+
               {account && !walletAllowed && <div className="wallet-error">This wallet is not on the approved list for this drop.</div>}
               {successHash && <div className="success-box">Claim confirmed on Tempo · <a href={explorerLink} target="_blank" rel="noreferrer">View transaction</a></div>}
-              <button className="create-btn" onClick={unavailable || alreadyClaimed ? undefined : claim} disabled={claiming || unavailable || alreadyClaimed}>
-                <Wallet size={17}/>{claiming ? "Waiting for wallet…" : account ? `Claim ${formatUnits(drop.amountPerClaim, token?.decimals ?? 6)} ${token?.symbol ?? ""}` : "Connect wallet to claim"}
+              <button className="create-btn" onClick={unavailable || alreadyClaimed ? undefined : claim} disabled={claiming || unavailable || alreadyClaimed || (isFcfs && !humanToken)}>
+                <Wallet size={17}/>{claiming ? "Waiting for wallet…" : fcfsInactive ? "Drop is locked" : account ? `Claim ${formatUnits(drop.amountPerClaim, token?.decimals ?? 6)} ${token?.symbol ?? ""}` : "Connect wallet to claim"}
                 {!claiming && <ArrowUpRight size={16}/>}
               </button>
               {account && <div className="claim-wallet">Connected {shortAddress(account)}</div>}
