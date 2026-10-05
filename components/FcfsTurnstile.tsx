@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 declare global {
   interface Window {
@@ -29,7 +29,7 @@ const SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "";
 
 export default function FcfsTurnstile({ onToken }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const widgetRef = useRef<string | null>(null);
+  const widgetRef = useRef<string | null>(null);\n  const [error, setError] = useState(false);
 
   useEffect(() => {
     if (!SITE_KEY || !containerRef.current) return;
@@ -75,5 +75,5 @@ export default function FcfsTurnstile({ onToken }: Props) {
     return <div className="wallet-error">Human verification is not configured.</div>;
   }
 
-  return <div ref={containerRef} aria-label="Human verification" />;
+  function retry() {\n    setError(false);\n    onToken("");\n    if (window.turnstile && widgetRef.current) {\n      window.turnstile.reset(widgetRef.current);\n    } else {\n      widgetRef.current = null;\n      requestAnimationFrame(() => {\n        if (window.turnstile && containerRef.current) {\n          renderWidget();\n        }\n      });\n    }\n  }\n\n  const renderWidget = () => {\n    if (!window.turnstile || !containerRef.current || widgetRef.current) return;\n    widgetRef.current = window.turnstile.render(containerRef.current, {\n      sitekey: SITE_KEY,\n      theme: "light",\n      size: "normal",\n      callback: onToken,\n      "expired-callback": () => { setError(false); onToken(""); },\n      "error-callback": () => { setError(true); onToken(""); },\n    });\n  };\n\n  return (\n    <div>\n      <div ref={containerRef} aria-label="Human verification" />\n      {error && (\n        <button type="button" className="secondary" onClick={retry} style={{ marginTop: 12 }}>\n          Retry verification\n        </button>\n      )}\n    </div>\n  );
 }
