@@ -2,7 +2,7 @@ name: Build SatoDrops
 
 on:
   push:
-    branches: [main]
+    branches: [main, "security/**"]
   workflow_dispatch:
 
 jobs:
