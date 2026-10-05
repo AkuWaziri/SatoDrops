@@ -16,7 +16,7 @@ declare global {
 const TEMPO_CHAIN_ID = "0x1079";
 const TEMPO_RPC = "https://rpc.tempo.xyz";
 const EXPLORER = "https://explore.tempo.xyz";
-const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_V2_CONTRACT_ADDRESS ?? "0x13048a5b34d182dc903871E89Db214847f8E1797";
+const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_V2_CONTRACT_ADDRESS ?? "0x36831349a4a56264844FAB3071BE2d84E7593139";
 const SATODROPS_FCFS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_FCFS_CONTRACT_ADDRESS ?? "";
 const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
@@ -24,7 +24,7 @@ const DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,addres
 const DROP_CLAIMED_TOPIC = keccak256(toBytes("DropClaimed(uint256,address,uint256,uint256)"));
 const FCFS_DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
 const LEGACY_DEPLOYMENT_TX = "0xda7d7912b86f1323ecd3ccc7355b2cbac458755947d82526b98b57df14dc0d70";
-const CURRENT_DEPLOYMENT_TX = process.env.NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX ?? "0x84c090a6be1aae7d07290e856427e58eb691b012581c64056e671de9e3d7ef23";
+const CURRENT_DEPLOYMENT_TX = process.env.NEXT_PUBLIC_SATODROPS_DEPLOYMENT_TX ?? "0xa1d7f1e4b7b678b249e74f42c90ffe645c8b8876b722c09e5b87a7d22c3268da";
 
 const tokens: Record<string, { symbol: string; address: string; decimals: number }> = {
   "0x20c000000000000000000000b9537d11c60e8b50": { symbol: "USDC", address: "0x20c000000000000000000000b9537d11c60e8b50", decimals: 6 },
