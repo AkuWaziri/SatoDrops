@@ -494,8 +494,75 @@ function HomeContent() {
       await waitForReceipt(provider, approvalHash);
 
       // Verify the post-approval state and simulate the exact token transfers
-      // that the FCFS contract will execute. This turns a generic contract
-      // revert into a useful balance/allowance/token-policy diagnostic.
+      // that the selected SatoDrops contract will execute. This catches
+      // token-policy/balance/allowance failures before the create transaction
+      // reaches the wallet's opaque simulation layer.
+      {
+        const balanceData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [account as `0x${string}`],
+        });
+        const allowanceData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [account as `0x${string}`, targetContract as `0x${string}`],
+        });
+
+        const balanceRaw = BigInt(await provider.request({
+          method: "eth_call",
+          params: [{ to: selectedToken.address, data: balanceData }, "latest"],
+        }) as string);
+        const allowanceRaw = BigInt(await provider.request({
+          method: "eth_call",
+          params: [{ to: selectedToken.address, data: allowanceData }, "latest"],
+        }) as string);
+
+        if (balanceRaw < totalFundingRaw) {
+          throw new Error(
+            `Insufficient ${selectedToken.symbol} balance. Required ${formatUnits(totalFundingRaw, selectedToken.decimals)} ${selectedToken.symbol}; wallet has ${formatUnits(balanceRaw, selectedToken.decimals)}.`,
+          );
+        }
+        if (allowanceRaw < totalFundingRaw) {
+          throw new Error(
+            `SatoDrops allowance is too low after approval. Required ${formatUnits(totalFundingRaw, selectedToken.decimals)} ${selectedToken.symbol}; allowance is ${formatUnits(allowanceRaw, selectedToken.decimals)}.`,
+          );
+        }
+
+        const feeRecipientData = encodeFunctionData({
+          abi: claimMode === "public" ? fcfsAbi : satodropsAbi,
+          functionName: "feeRecipient",
+          args: [],
+        });
+        const feeRecipient = String(await provider.request({
+          method: "eth_call",
+          params: [{ to: targetContract, data: feeRecipientData }, "latest"],
+        })).slice(-40);
+        const feeRecipientAddress = `0x${feeRecipient}`;
+
+        const transferFeeData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "transferFrom",
+          args: [account as `0x${string}`, feeRecipientAddress as `0x${string}`, creationFeeRaw],
+        });
+        const transferRewardData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "transferFrom",
+          args: [account as `0x${string}`, targetContract as `0x${string}`, rewardTotalRaw + claimFeesRaw],
+        });
+
+        for (const [label, data] of [
+          [`${claimMode === "public" ? "FCFS" : "Wallet-specific"} creation-fee transfer`, transferFeeData],
+          [`${claimMode === "public" ? "FCFS" : "Wallet-specific"} reward funding transfer`, transferRewardData],
+        ] as const) {
+          await simulateTransaction(provider, {
+            from: targetContract,
+            to: selectedToken.address,
+            data,
+          }, label);
+        }
+      }
+
       if (claimMode === "public") {
         const balanceData = encodeFunctionData({
           abi: erc20Abi,
