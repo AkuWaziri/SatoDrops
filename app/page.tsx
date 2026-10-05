@@ -586,14 +586,11 @@ function HomeContent() {
             ],
           });
 
-      if (claimMode === "wallet") {
-        await simulateTransaction(provider, {
-          from: account,
-          to: targetContract,
-          data: createData,
-        }, "Wallet-specific drop creation");
-      }
-
+      // Do not pre-simulate the wallet-specific create call here.
+      // Some injected/WalletConnect providers reject eth_call for this
+      // state-changing calldata even though eth_sendTransaction is valid.
+      // The approval above is already confirmed, so let the wallet prompt
+      // for the actual create transaction directly.
       const createHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
