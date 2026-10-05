@@ -86,12 +86,6 @@ contract SatoDrops {
         if (maxClaims == 0) revert InvalidClaims();
         if (walletSpecific) {
             if (wallets.length == 0 || wallets.length > 100 || wallets.length != maxClaims) revert InvalidWalletList();
-            for (uint256 i = 0; i < wallets.length; i++) {
-                address wallet = wallets[i];
-                if (wallet == address(0) || allowedClaimants[dropId][wallet]) revert InvalidWalletList();
-                allowedClaimants[dropId][wallet] = true;
-            }
-            allowedClaimantCount[dropId] = wallets.length;
         } else if (wallets.length != 0) {
             revert InvalidWalletList();
         }
@@ -105,6 +99,14 @@ contract SatoDrops {
         _safeTransferFrom(token, msg.sender, address(this), rewardTotal + claimFeesReserved);
 
         dropId = nextDropId++;
+        if (walletSpecific) {
+            for (uint256 i = 0; i < wallets.length; i++) {
+                address wallet = wallets[i];
+                if (wallet == address(0) || allowedClaimants[dropId][wallet]) revert InvalidWalletList();
+                allowedClaimants[dropId][wallet] = true;
+            }
+            allowedClaimantCount[dropId] = wallets.length;
+        }
         drops[dropId] = Drop({
             creator: msg.sender,
             token: token,
