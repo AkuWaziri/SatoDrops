@@ -66,6 +66,7 @@ if (WALLETCONNECT_PROJECT_ID && wagmiAdapter) {
 }
 
 const SATODROPS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_V2_CONTRACT_ADDRESS ?? "0x13048a5b34d182dc903871E89Db214847f8E1797";
+const SATODROPS_FCFS_CONTRACT = process.env.NEXT_PUBLIC_SATODROPS_FCFS_CONTRACT_ADDRESS ?? "";
 const SATODROPS_LEGACY_CONTRACT = "0x44bD9AFc5304200E0880392f907C5d0FC2948bBE";
 const PATH_USD_FEE_TOKEN = "0x20c0000000000000000000000000000000000000";
 
@@ -86,9 +87,44 @@ const erc20Abi = [
     ],
     outputs: [{ name: "", type: "bool" }],
   },
+  {
+    type: "function",
+    name: "transferFrom",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "value", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "owner", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
 ] as const;
 
 const satodropsAbi = [
+  {
+    type: "function",
+    name: "feeRecipient",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
   {
     type: "function",
     name: "createDrop",
@@ -105,6 +141,31 @@ const satodropsAbi = [
     outputs: [{ name: "dropId", type: "uint256" }],
   },
 ] as const;
+
+const fcfsAbi = [
+  {
+    type: "function",
+    name: "feeRecipient",
+    stateMutability: "view",
+    inputs: [],
+    outputs: [{ name: "", type: "address" }],
+  },
+  {
+    type: "function",
+    name: "createDrop",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "token", type: "address" },
+      { name: "amountPerClaim", type: "uint128" },
+      { name: "maxClaims", type: "uint64" },
+      { name: "expiresAt", type: "uint64" },
+      { name: "message", type: "string" },
+    ],
+    outputs: [{ name: "dropId", type: "uint256" }],
+  },
+] as const;
+
+const FCFS_DROP_CREATED_TOPIC = keccak256(toBytes("DropCreated(uint256,address,address,uint256,uint256,uint256,uint256,uint256,uint256)"));
 
 const shortAddress = (address: string) => `${address.slice(0, 6)}…${address.slice(-4)}`;
 
@@ -145,7 +206,40 @@ async function waitForReceipt(provider: NonNullable<Window["ethereum"]>, hash: s
   throw new Error("Transaction confirmation timed out. Check the transaction on Tempo Explorer.");
 }
 
-export default function Home() {
+function providerErrorMessage(error: unknown): string {
+  const value = error as { message?: string; shortMessage?: string; details?: string; data?: unknown; cause?: unknown };
+  const parts: string[] = [];
+  for (const item of [value?.shortMessage, value?.message, value?.details]) {
+    if (typeof item === "string" && item.trim() && !parts.includes(item.trim())) parts.push(item.trim());
+  }
+  if (value?.data) {
+    const data = typeof value.data === "string" ? value.data : JSON.stringify(value.data);
+    if (data && !parts.some((part) => part.includes(data))) parts.push(`RPC data: ${data}`);
+  }
+  if (value?.cause && typeof value.cause === "object") {
+    const cause = providerErrorMessage(value.cause);
+    if (cause && !parts.includes(cause)) parts.push(cause);
+  }
+  return parts.join(" | ") || (error instanceof Error ? error.message : "Drop creation failed.");
+}
+
+async function simulateTransaction(
+  provider: Eip1193Provider,
+  tx: { from: string; to: string; data: string },
+  label: string,
+) {
+  try {
+    await provider.request({
+      method: "eth_call",
+      params: [tx, "latest"],
+    });
+  } catch (error) {
+    throw new Error(`${label} simulation failed: ${providerErrorMessage(error)}`);
+  }
+}
+
+
+function HomeContent() {
   const [token, setToken] = useState("USDC");
   const [amount, setAmount] = useState("5");
   const [claims, setClaims] = useState("10");
@@ -157,7 +251,7 @@ export default function Home() {
   const [balances, setBalances] = useState<Record<string, number>>({});
   const [walletError, setWalletError] = useState("");
   const [creating, setCreating] = useState(false);
-  const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[] }>>([]);
+  const [recentDrops, setRecentDrops] = useState<Array<{ id:string; creator:string; token:typeof tokens[number]; amountPerClaim:bigint; maxClaims:bigint; claimed:bigint; creationTx:string; claimTxs:string[]; fcfs?: boolean; active?: boolean }>>([]);
   const [recentDropsLoading, setRecentDropsLoading] = useState(true);
 
   const walletList = walletsText.split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
@@ -195,6 +289,133 @@ export default function Home() {
     }
   }
 
+  useEffect(() => {
+    const loadRecentDrops = async () => {
+      try {
+        if (!account) {
+          setRecentDrops([]);
+          return;
+        }
+
+        const latestRaw = await readTempoRpc("eth_blockNumber", []);
+        const latestBlock = BigInt(latestRaw as string);
+        const maxRange = 100000n;
+        const fromBlock = latestBlock > maxRange ? latestBlock - maxRange + 1n : 0n;
+        const wallet = account.toLowerCase();
+
+        const loadContractDrops = async (contract: string, topic: string, fcfs: boolean) => {
+          if (!contract) return [];
+
+          const raw = await readTempoRpc("eth_getLogs", [{
+            address: contract,
+            fromBlock: "0x" + fromBlock.toString(16),
+            toBlock: "0x" + latestBlock.toString(16),
+            topics: [topic],
+          }]);
+
+          const logs = raw as unknown as Array<{ topics?: string[]; transactionHash?: string }>;
+          const ownedLogs = logs.filter(
+            (log) => (log.topics?.[2] ?? "").slice(-40).toLowerCase() === wallet.slice(2),
+          );
+          const ids = ownedLogs
+            .map((log) => log.topics?.[1] ? BigInt(log.topics[1]).toString() : "")
+            .filter(Boolean)
+            .slice(-10)
+            .reverse();
+
+          const loaded: Array<{
+            id:string;
+            creator:string;
+            token:typeof tokens[number];
+            amountPerClaim:bigint;
+            maxClaims:bigint;
+            claimed:bigint;
+            creationTx:string;
+            claimTxs:string[];
+            fcfs?:boolean;
+            active?:boolean;
+          }> = [];
+
+          for (const id of ids) {
+            const creationLog = ownedLogs.find(
+              (log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id,
+            );
+
+            const data = await readTempoRpc("eth_call", [{
+              to: contract,
+              data: encodeFunctionData({
+                abi: [{
+                  type:"function",
+                  name:"drops",
+                  stateMutability:"view",
+                  inputs:[{name:"dropId",type:"uint256"}],
+                  outputs: fcfs
+                    ? [
+                        {name:"creator",type:"address"},
+                        {name:"token",type:"address"},
+                        {name:"amountPerClaim",type:"uint128"},
+                        {name:"maxClaims",type:"uint64"},
+                        {name:"claimed",type:"uint64"},
+                        {name:"expiresAt",type:"uint64"},
+                        {name:"active",type:"bool"},
+                        {name:"closed",type:"bool"},
+                        {name:"message",type:"string"},
+                      ]
+                    : [
+                        {name:"creator",type:"address"},
+                        {name:"token",type:"address"},
+                        {name:"amountPerClaim",type:"uint128"},
+                        {name:"maxClaims",type:"uint64"},
+                        {name:"claimed",type:"uint64"},
+                        {name:"expiresAt",type:"uint64"},
+                        {name:"closed",type:"bool"},
+                        {name:"message",type:"string"},
+                      ],
+                }] as const,
+                functionName:"drops",
+                args:[BigInt(id)],
+              }),
+            }, "latest"]);
+
+            const hex = String(data).replace(/^0x/, "");
+            const word = (i:number) => hex.slice(i*64,(i+1)*64);
+            const tokenAddress = "0x" + word(1).slice(24);
+            const tokenInfo = tokens.find((t) => t.address.toLowerCase() === tokenAddress.toLowerCase());
+            if (!tokenInfo) continue;
+
+            loaded.push({
+              id,
+              creator:"0x"+word(0).slice(24),
+              token:tokenInfo,
+              amountPerClaim:BigInt("0x"+word(2)),
+              maxClaims:BigInt("0x"+word(3)),
+              claimed:BigInt("0x"+word(4)),
+              creationTx:creationLog?.transactionHash ?? "",
+              claimTxs:[],
+              fcfs,
+              active: fcfs ? BigInt("0x"+word(6)) !== 0n : true,
+            });
+          }
+
+          return loaded;
+        };
+
+        const [standardDrops, fcfsDrops] = await Promise.all([
+          loadContractDrops(SATODROPS_CONTRACT, DROP_CREATED_TOPIC, false),
+          loadContractDrops(SATODROPS_FCFS_CONTRACT, FCFS_DROP_CREATED_TOPIC, true),
+        ]);
+
+        setRecentDrops([...fcfsDrops, ...standardDrops].slice(0, 10));
+      } catch (error) {
+        console.error("Could not load existing drops", error);
+      } finally {
+        setRecentDropsLoading(false);
+      }
+    };
+
+    void loadRecentDrops();
+  }, [account]);
+
   async function createDrop() {
     setWalletError("");
     setCreated(false);
@@ -208,8 +429,9 @@ export default function Home() {
       await connectWallet();
       return;
     }
-    if (!SATODROPS_CONTRACT) {
-      setWalletError("SatoDrops contract is not deployed/configured yet.");
+    const targetContract = claimMode === "public" ? SATODROPS_FCFS_CONTRACT : SATODROPS_CONTRACT;
+    if (!targetContract) {
+      setWalletError("The FCFS contract is not deployed/configured yet.");
       return;
     }
 
@@ -250,8 +472,14 @@ export default function Home() {
       const approveData = encodeFunctionData({
         abi: erc20Abi,
         functionName: "approve",
-        args: [SATODROPS_CONTRACT as `0x${string}`, totalFundingRaw],
+        args: [targetContract as `0x${string}`, totalFundingRaw],
       });
+
+      await simulateTransaction(provider, {
+        from: account,
+        to: selectedToken.address,
+        data: approveData,
+      }, "Token approval");
 
       const approvalHash = await provider.request({
         method: "eth_sendTransaction",
@@ -265,25 +493,112 @@ export default function Home() {
 
       await waitForReceipt(provider, approvalHash);
 
-      const createData = encodeFunctionData({
-        abi: satodropsAbi,
-        functionName: "createDrop",
-        args: [
-          selectedToken.address as `0x${string}`,
-          rewardPerClaim,
-          BigInt(effectiveClaims),
-          0n,
-          claimMode === "wallet",
-          (claimMode === "wallet" ? walletList : []) as `0x${string}`[],
-          message,
-        ],
-      });
+      // Verify the post-approval state and simulate the exact token transfers
+      // that the FCFS contract will execute. This turns a generic contract
+      // revert into a useful balance/allowance/token-policy diagnostic.
+      if (claimMode === "public") {
+        const balanceData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "balanceOf",
+          args: [account as `0x${string}`],
+        });
+        const allowanceData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "allowance",
+          args: [account as `0x${string}`, targetContract as `0x${string}`],
+        });
+
+        const balanceRaw = BigInt(await provider.request({
+          method: "eth_call",
+          params: [{ to: selectedToken.address, data: balanceData }, "latest"],
+        }) as string);
+        const allowanceRaw = BigInt(await provider.request({
+          method: "eth_call",
+          params: [{ to: selectedToken.address, data: allowanceData }, "latest"],
+        }) as string);
+
+        if (balanceRaw < totalFundingRaw) {
+          throw new Error(
+            `Insufficient ${selectedToken.symbol} balance. Required ${formatUnits(totalFundingRaw, selectedToken.decimals)} ${selectedToken.symbol}; wallet has ${formatUnits(balanceRaw, selectedToken.decimals)}.`,
+          );
+        }
+        if (allowanceRaw < totalFundingRaw) {
+          throw new Error(
+            `FCFS allowance is too low after approval. Required ${formatUnits(totalFundingRaw, selectedToken.decimals)} ${selectedToken.symbol}; allowance is ${formatUnits(allowanceRaw, selectedToken.decimals)}.`,
+          );
+        }
+
+        const creationFeeRaw = rewardTotalRaw / 100n;
+        const claimFeesRaw = rewardTotalRaw / 200n;
+        const rewardAndClaimRaw = rewardTotalRaw + claimFeesRaw;
+
+        const feeRecipientData = encodeFunctionData({
+          abi: fcfsAbi,
+          functionName: "feeRecipient",
+          args: [],
+        });
+        const feeRecipient = String(await provider.request({
+          method: "eth_call",
+          params: [{ to: targetContract, data: feeRecipientData }, "latest"],
+        })).slice(-40);
+        const feeRecipientAddress = `0x${feeRecipient}`;
+
+        const transferFeeData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "transferFrom",
+          args: [account as `0x${string}`, feeRecipientAddress as `0x${string}`, creationFeeRaw],
+        });
+        const transferRewardData = encodeFunctionData({
+          abi: erc20Abi,
+          functionName: "transferFrom",
+          args: [account as `0x${string}`, targetContract as `0x${string}`, rewardAndClaimRaw],
+        });
+
+        for (const [label, data] of [
+          ["FCFS creation-fee transfer", transferFeeData],
+          ["FCFS reward funding transfer", transferRewardData],
+        ] as const) {
+          await simulateTransaction(provider, {
+            from: targetContract,
+            to: selectedToken.address,
+            data,
+          }, label);
+        }
+      }
+
+      const createData = claimMode === "public"
+        ? encodeFunctionData({
+            abi: fcfsAbi,
+            functionName: "createDrop",
+            args: [selectedToken.address as `0x${string}`, rewardPerClaim, BigInt(effectiveClaims), 0n, message],
+          })
+        : encodeFunctionData({
+            abi: satodropsAbi,
+            functionName: "createDrop",
+            args: [
+              selectedToken.address as `0x${string}`,
+              rewardPerClaim,
+              BigInt(effectiveClaims),
+              0n,
+              true,
+              walletList as `0x${string}`[],
+              message,
+            ],
+          });
+
+      if (claimMode === "wallet") {
+        await simulateTransaction(provider, {
+          from: account,
+          to: targetContract,
+          data: createData,
+        }, "Wallet-specific drop creation");
+      }
 
       const createHash = await provider.request({
         method: "eth_sendTransaction",
         params: [{
           from: account,
-          to: SATODROPS_CONTRACT,
+          to: targetContract,
           data: createData,
           feeToken: PATH_USD_FEE_TOKEN,
         }],
@@ -292,8 +607,9 @@ export default function Home() {
       const createReceipt = await waitForReceipt(provider, createHash);
 
       const logs = (createReceipt as { logs?: Array<{ address?: string; topics?: string[] }> }).logs ?? [];
+      const creationTopic = claimMode === "public" ? FCFS_DROP_CREATED_TOPIC : DROP_CREATED_TOPIC;
       const contractLog = logs.find(
-        (log) => log.address?.toLowerCase() === SATODROPS_CONTRACT.toLowerCase() && log.topics?.[0]?.toLowerCase() === DROP_CREATED_TOPIC.toLowerCase()
+        (log) => log.address?.toLowerCase() === targetContract.toLowerCase() && log.topics?.[0]?.toLowerCase() === creationTopic.toLowerCase()
       );
       const dropId = contractLog?.topics?.[1] ? BigInt(contractLog.topics[1]).toString() : "";
 
@@ -301,54 +617,15 @@ export default function Home() {
         throw new Error("Drop was funded, but the new drop ID could not be read from the transaction receipt.");
       }
 
-      window.location.assign(`/claim?id=${dropId}&v=2`);
+      window.location.assign(claimMode === "public" ? `/claim?id=${dropId}&v=fcfs` : `/claim?id=${dropId}&v=2`);
     } catch (error) {
-      setWalletError(error instanceof Error ? error.message : "Drop creation failed.");
+      setWalletError(providerErrorMessage(error));
     } finally {
       setCreating(false);
     }
   }
 
-  useEffect(() => {
-    const loadRecentDrops = async () => {
-      try {
-        if (!SATODROPS_CONTRACT || !account) {
-          setRecentDrops([]);
-          return;
-        }
-        const deploymentRaw = await readTempoRpc("eth_getTransactionReceipt", [DEPLOYMENT_TX]);
-        const deploymentReceipt = deploymentRaw as unknown as { blockNumber?: string };
-        if (!deploymentReceipt.blockNumber) throw new Error("Could not determine the SatoDrops deployment block.");
-        const latestRaw = await readTempoRpc("eth_blockNumber", []);
-        const deploymentBlock = BigInt(deploymentReceipt.blockNumber as string);
-        const latestBlock = BigInt(latestRaw as string);
-        const maxRange = 100000n;
-        const fromBlock = latestBlock > maxRange ? latestBlock - maxRange + 1n : deploymentBlock;
-        const effectiveFrom = fromBlock > deploymentBlock ? fromBlock : deploymentBlock;
-        const raw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CREATED_TOPIC] }]);
-        const logs = raw as unknown as Array<{ topics?: string[]; transactionHash?: string }>;
-const wallet = account.toLowerCase();
-const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowerCase() === wallet.slice(2));
-        const ids = ownedLogs.map((log) => log.topics?.[1] ? BigInt(log.topics[1]).toString() : "").filter(Boolean).slice(-10).reverse();
-        const claimRaw = await readTempoRpc("eth_getLogs", [{ address: SATODROPS_CONTRACT, fromBlock: "0x" + effectiveFrom.toString(16), toBlock: "0x" + latestBlock.toString(16), topics: [DROP_CLAIMED_TOPIC] }]);
-        const claimLogs = claimRaw as unknown as Array<{ topics?: string[]; transactionHash?: string }>;
-        const loaded = [];
-        for (const id of ids) {
-          const creationLog = ownedLogs.find((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id);
-          const claimTxs = claimLogs.filter((log) => log.topics?.[1] && BigInt(log.topics[1]).toString() === id && log.transactionHash).map((log) => log.transactionHash as string);
-          const data = await readTempoRpc("eth_call", [{ to: SATODROPS_CONTRACT, data: encodeFunctionData({ abi: [{ type:"function", name:"drops", stateMutability:"view", inputs:[{name:"dropId",type:"uint256"}], outputs:[{name:"creator",type:"address"},{name:"token",type:"address"},{name:"amountPerClaim",type:"uint128"},{name:"maxClaims",type:"uint64"},{name:"claimed",type:"uint64"},{name:"expiresAt",type:"uint64"},{name:"closed",type:"bool"},{name:"message",type:"string"}] }] as const, functionName:"drops", args:[BigInt(id)] }) }, "latest"]);
-          const hex = String(data).replace(/^0x/, "");
-          const word = (i:number) => hex.slice(i*64,(i+1)*64);
-          const tokenAddress = "0x" + word(1).slice(24);
-          const tokenInfo = tokens.find((t) => t.address.toLowerCase() === tokenAddress.toLowerCase());
-          if (tokenInfo) loaded.push({ id, creator:"0x"+word(0).slice(24), token:tokenInfo, amountPerClaim:BigInt("0x"+word(2)), maxClaims:BigInt("0x"+word(3)), claimed:BigInt("0x"+word(4)), creationTx:creationLog?.transactionHash ?? "", claimTxs });
-        }
-        setRecentDrops(loaded);
-      } catch (error) { console.error("Could not load existing drops", error); }
-      finally { setRecentDropsLoading(false); }
-    };
-    void loadRecentDrops();
-  }, [account]);
+
 
   useEffect(() => {
     if (!appKitConnected || !appKitAddress || !walletProvider) {
@@ -455,7 +732,7 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
 
       <section className="existing-drops">
         <div className="section-heading"><div><div className="eyebrow">YOUR ONCHAIN DROPS</div><h2>Recent drops</h2></div><span className="step-count">PRIVATE TO CONNECTED WALLET</span></div>
-        {!account ? <div className="existing-empty">Connect your wallet to view your drops.</div> : recentDropsLoading ? <div className="existing-empty">Loading your drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops created by this wallet yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; return <a className="existing-drop" href={"/claim?id="+item.id+"&v=2"} key={item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
+        {!account ? <div className="existing-empty">Connect your wallet to view your drops.</div> : recentDropsLoading ? <div className="existing-empty">Loading your drops…</div> : recentDrops.length === 0 ? <div className="existing-empty">No drops created by this wallet yet.</div> : <div className="existing-grid">{recentDrops.map((item) => { const remaining=item.maxClaims-item.claimed; const locked=item.fcfs && !item.active; return <a className="existing-drop" href={"/claim?id="+item.id+(item.fcfs?"&v=fcfs":"&v=2")} key={(item.fcfs?"fcfs-":"standard-")+item.id}><div className="existing-top"><span className="pill">{remaining===0n?"COMPLETED":locked?"LOCKED":"ACTIVE"}</span><span className="mono">#{item.id}</span></div><div className="existing-amount">{formatUnits(item.amountPerClaim,item.token.decimals)} <span>{item.token.symbol}</span></div><div className="existing-meta"><span>{item.claimed.toString()} / {item.maxClaims.toString()} claimed</span><span>{remaining.toString()} left</span></div><div className="progress"><div style={{width:(Math.min(100,Number(item.claimed*100n/item.maxClaims)))+"%"}}/></div><div className="existing-creator">Created by {shortAddress(item.creator)} <ArrowUpRight size={13}/></div>{item.creationTx && <div className="existing-tx"><span>Drop TX</span><a href={`https://explore.tempo.xyz/tx/${item.creationTx}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>View transaction <ArrowUpRight size={12}/></a></div>}{item.claimTxs.length > 0 && <div className="existing-tx"><span>{item.claimTxs.length} claim transaction{item.claimTxs.length === 1 ? "" : "s"}</span><a href={`https://explore.tempo.xyz/tx/${item.claimTxs[item.claimTxs.length - 1]}`} target="_blank" rel="noreferrer" onClick={(e)=>e.stopPropagation()}>Latest claim <ArrowUpRight size={12}/></a></div>}</a>; })}</div>}
       </section>
 
 
@@ -465,3 +742,27 @@ const ownedLogs = logs.filter((log) => (log.topics?.[2] ?? "").slice(-40).toLowe
     </main>
   );
 }
+
+export default function Home() {
+  // AppKit hooks are only rendered after createAppKit has been initialized.
+  // Preview deployments receive the same public WalletConnect configuration as production.
+  // This also keeps Vercel/Next.js builds from invoking AppKit hooks when the
+  // public WalletConnect project id is absent from the build environment.
+  if (!WALLETCONNECT_PROJECT_ID) {
+    return (
+      <main>
+        <nav className="nav">
+          <div className="brand"><img className="brand-logo" src="/satodrops-logo.svg" alt="SatoDrops" /><span>SatoDrops</span></div>
+        </nav>
+        <section className="hero">
+          <div className="hero-copy">
+            <div className="eyebrow"><span className="live-dot"/> POWERED BY TEMPO</div>
+            <h1>Stablecoins rewards.<br/><span>Instantly claimable.</span></h1>
+            <p className="hero-text">Wallet connection is temporarily unavailable because the WalletConnect project ID is not configured.</p>
+          </div>
+        </section>
+      </main>
+    );
+  }
+  return <HomeContent />;
+} 
